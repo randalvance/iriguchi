@@ -39,9 +39,14 @@ export type TranslateContext = {
   created: number;
   model: string;
   showToolCalls: boolean;
+  state: { nextToolIndex: number };
 };
 
-let nextToolIndex = 0; // module-local; runner resets per-request via newToolIndex
+export function createTranslateContext(
+  args: Omit<TranslateContext, "state">,
+): TranslateContext {
+  return { ...args, state: { nextToolIndex: 0 } };
+}
 
 function chunk(ctx: TranslateContext, choice: Partial<OpenAIChoice>): OpenAIChunk {
   return {
@@ -56,7 +61,7 @@ function chunk(ctx: TranslateContext, choice: Partial<OpenAIChoice>): OpenAIChun
 export function translateSdkEvent(ev: SdkEvent, ctx: TranslateContext): OpenAIChunk[] {
   switch (ev.type) {
     case "stream_start":
-      nextToolIndex = 0;
+      ctx.state.nextToolIndex = 0;
       return [chunk(ctx, { delta: { role: "assistant", content: "" } })];
     case "text_chunk":
       if (!ev.text) return [];
@@ -68,7 +73,7 @@ export function translateSdkEvent(ev: SdkEvent, ctx: TranslateContext): OpenAICh
           delta: {
             tool_calls: [
               {
-                index: nextToolIndex++,
+                index: ctx.state.nextToolIndex++,
                 id: ev.id,
                 type: "function",
                 function: { name: ev.name, arguments: JSON.stringify(ev.input) },
