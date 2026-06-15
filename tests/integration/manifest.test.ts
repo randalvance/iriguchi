@@ -70,7 +70,7 @@ describe("fetchManifest", () => {
     ).rejects.toThrow(ManifestFetchError);
   });
 
-  it("respects a custom timeout", async () => {
+  it("respects a custom timeout and reports it as a timeout", async () => {
     const server = spinUpMockApp(async () => {
       await Bun.sleep(200);
       return Response.json({});
@@ -82,7 +82,7 @@ describe("fetchManifest", () => {
           appToken: "t",
           timeoutMs: 50,
         }),
-      ).rejects.toThrow(ManifestFetchError);
+      ).rejects.toThrow(/timeout after 50ms/);
     } finally {
       server.stop();
     }

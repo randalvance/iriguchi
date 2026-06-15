@@ -25,7 +25,14 @@ export async function fetchManifest(opts: {
       signal: ctrl.signal,
     });
   } catch (err) {
-    throw new ManifestFetchError(`network error fetching ${url}`, err);
+    const isAbort = err instanceof DOMException && err.name === "AbortError";
+    const timeoutMs = opts.timeoutMs ?? 10000;
+    throw new ManifestFetchError(
+      isAbort
+        ? `timeout after ${timeoutMs}ms fetching ${url}`
+        : `network error fetching ${url}`,
+      err,
+    );
   } finally {
     clearTimeout(timeout);
   }
