@@ -24,7 +24,7 @@ export function createLogger(opts: { sink?: Sink; bound?: Record<string, unknown
   const sink = opts.sink || defaultSink;
   const bound = opts.bound || {};
   const emit = (level: LogLevel, event: string, fields: Record<string, unknown> = {}) => {
-    sink({ event, level, ts: Date.now(), ...bound, ...fields });
+    sink({ ...bound, ...fields, event, level, ts: Date.now() });
   };
   return {
     info: (e, f) => emit("info", e, f),

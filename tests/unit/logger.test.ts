@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import { createLogger, type LogEvent } from "../../src/logger.ts";
 
 function captureLogger() {
@@ -56,5 +56,20 @@ describe("logger", () => {
     const parsed = JSON.parse(line);
     expect(parsed.event).toBe("test.evt");
     expect(parsed.x).toBe(1);
+  });
+
+  it("bound fields cannot overwrite reserved envelope keys (event, level, ts)", () => {
+    const { events, sink } = captureLogger();
+    const log = createLogger({ sink }).with({
+      event: "hijacked",
+      level: "error" as const,
+      ts: 0,
+    });
+    log.info("real.event", { fields_payload: "ok" });
+    expect(events[0].event).toBe("real.event");
+    expect(events[0].level).toBe("info");
+    expect(events[0].ts).not.toBe(0);
+    expect(typeof events[0].ts).toBe("number");
+    expect(events[0].fields_payload).toBe("ok");
   });
 });
