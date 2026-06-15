@@ -64,4 +64,28 @@ describe("bearerAuth middleware", () => {
     });
     expect(res.status).toBe(200);
   });
+
+  it("returns 401 with empty tokens array (no allowlist matches)", async () => {
+    const app = new Hono();
+    app.use("*", bearerAuth({ tokens: [] }));
+    app.get("/", (c) => c.text("ok"));
+    const res = await app.request("/", {
+      headers: { Authorization: "Bearer anything" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 on non-Bearer scheme (Basic)", async () => {
+    const app = new Hono();
+    app.use("*", bearerAuth({ tokens: ["secret"] }));
+    app.get("/", (c) => c.text("ok"));
+    const res = await app.request("/", {
+      headers: { Authorization: "Basic c2VjcmV0" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("throws at construction if neither tokens nor resolve is supplied", () => {
+    expect(() => bearerAuth({})).toThrow(/tokens.*resolve/i);
+  });
 });

@@ -31,11 +31,14 @@ export type BearerAuthOpts = {
 };
 
 export function bearerAuth(opts: BearerAuthOpts): MiddlewareHandler {
+  if (opts.tokens === undefined && opts.resolve === undefined) {
+    throw new Error("bearerAuth: must supply either `tokens` or `resolve`");
+  }
   return async (c, next) => {
     const header = c.req.header("Authorization");
     if (!header?.startsWith("Bearer ")) return unauthorized(c);
     const presented = header.slice(7).trim();
-    const valid = opts.tokens || (await opts.resolve!(c));
+    const valid = opts.tokens ?? (await opts.resolve!(c));
     for (const candidate of valid) {
       if (constantTimeEqual(presented, candidate)) {
         return next();
