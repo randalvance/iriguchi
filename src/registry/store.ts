@@ -53,6 +53,8 @@ export function createStore(opts: { dbPath: string }): Store {
     base_url: row.base_url,
     app_token: row.app_token,
     registered_at: row.registered_at,
+    // TODO: validate parsed JSON via ManifestSchema once schema changes between
+    // gateway versions become possible. For v1 the input was already validated.
     manifest: row.manifest_json ? (JSON.parse(row.manifest_json) as Manifest) : null,
     manifest_fetched_at: row.manifest_fetched_at,
   });
@@ -74,20 +76,29 @@ export function createStore(opts: { dbPath: string }): Store {
     `INSERT OR REPLACE INTO agents (id, app_id) VALUES (?, ?)`,
   );
 
+  const conflictStmt = db.prepare(
+    `SELECT id FROM agents WHERE id = ? AND app_id != ?`,
+  );
+  const getAppStmt = db.prepare(`SELECT * FROM apps WHERE id = ?`);
+  const listAppsStmt = db.prepare(`SELECT * FROM apps`);
+  const lookupAgentJoinStmt = db.prepare(
+    `SELECT apps.* FROM apps
+     JOIN agents ON agents.app_id = apps.id
+     WHERE agents.id = ?`,
+  );
+  const deleteAppStmt = db.prepare(`DELETE FROM apps WHERE id = ?`);
+
   return {
     upsertApp(input) {
       const now = Date.now();
-      // First, check that no agent id in the new manifest belongs to a different app.
-      const conflictStmt = db.prepare(
-        `SELECT id FROM agents WHERE id = ? AND app_id != ?`,
-      );
-      for (const a of input.manifest.agents) {
-        const conflict = conflictStmt.get(a.id, input.id) as { id: string } | null;
-        if (conflict) {
-          throw new Error(`Agent id "${a.id}" is already owned by another app`);
-        }
-      }
       db.transaction(() => {
+        // Atomic check + insert: no other write can interleave.
+        for (const a of input.manifest.agents) {
+          const conflict = conflictStmt.get(a.id, input.id) as { id: string } | null;
+          if (conflict) {
+            throw new Error(`Agent id "${a.id}" is already owned by another app`);
+          }
+        }
         upsertAppStmt.run(
           input.id,
           input.base_url,
@@ -105,23 +116,17 @@ export function createStore(opts: { dbPath: string }): Store {
     },
 
     getApp(id) {
-      const row = db.query(`SELECT * FROM apps WHERE id = ?`).get(id) as any;
+      const row = getAppStmt.get(id) as any;
       return row ? rowToApp(row) : null;
     },
 
     listApps() {
-      const rows = db.query(`SELECT * FROM apps`).all() as any[];
+      const rows = listAppsStmt.all() as any[];
       return rows.map(rowToApp);
     },
 
     lookupAgent(agentId) {
-      const row = db
-        .query(
-          `SELECT apps.* FROM apps
-           JOIN agents ON agents.app_id = apps.id
-           WHERE agents.id = ?`,
-        )
-        .get(agentId) as any;
+      const row = lookupAgentJoinStmt.get(agentId) as any;
       if (!row) return null;
       const app = rowToApp(row);
       const agent = app.manifest?.agents.find((a) => a.id === agentId);
@@ -130,7 +135,7 @@ export function createStore(opts: { dbPath: string }): Store {
     },
 
     deleteApp(id) {
-      db.query(`DELETE FROM apps WHERE id = ?`).run(id);
+      deleteAppStmt.run(id);
     },
 
     close() {
