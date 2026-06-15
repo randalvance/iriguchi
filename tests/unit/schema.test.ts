@@ -107,4 +107,22 @@ describe("ManifestSchema", () => {
     m.agents.push(structuredClone(m.agents[0]));
     expect(() => ManifestSchema.parse(m)).toThrow(/duplicate/i);
   });
+
+  it("rejects protocol-relative endpoint path", () => {
+    const m = structuredClone(VALID_MANIFEST);
+    m.agents[0].tools[0].endpoint.path = "//evil.example.com/api";
+    expect(() => ManifestSchema.parse(m)).toThrow(/path/i);
+  });
+
+  it("rejects endpoint path without leading slash", () => {
+    const m = structuredClone(VALID_MANIFEST);
+    m.agents[0].tools[0].endpoint.path = "api/forecast";
+    expect(() => ManifestSchema.parse(m)).toThrow(/path/i);
+  });
+
+  it("rejects ids with trailing hyphen (kebab-case strict)", () => {
+    const m = structuredClone(VALID_MANIFEST);
+    (m.agents[0] as any).id = "weather-bot-";
+    expect(() => ManifestSchema.parse(m)).toThrow();
+  });
 });

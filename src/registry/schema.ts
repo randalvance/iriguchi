@@ -7,7 +7,7 @@ const ApiCallEndpoint = z.object({
   path: z
     .string()
     .min(1)
-    .refine((p) => p.startsWith("/") && !/^https?:\/\//i.test(p), {
+    .refine((p) => p.startsWith("/") && !p.startsWith("//"), {
       message: "endpoint.path must be a relative path starting with '/'",
     }),
 });
@@ -28,7 +28,7 @@ const SkillSchema = z
     name: z
       .string()
       .min(1)
-      .regex(/^[a-z0-9][a-z0-9-]*$/, "skill name must be kebab-case"),
+      .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, "skill name must be kebab-case"),
     content: z.string().optional(),
     url: z
       .string()
@@ -53,7 +53,7 @@ const AgentSchema = z.object({
   id: z
     .string()
     .min(1)
-    .regex(/^[a-z0-9][a-z0-9-]*$/, "agent id must be kebab-case"),
+    .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, "agent id must be kebab-case"),
   name: z.string().min(1),
   description: z.string().min(1),
   system_prompt: z.string().min(1),
@@ -69,7 +69,7 @@ export const ManifestSchema = z
       id: z
         .string()
         .min(1)
-        .regex(/^[a-z0-9][a-z0-9-]*$/, "app id must be kebab-case"),
+        .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, "app id must be kebab-case"),
       name: z.string().min(1),
       description: z.string().min(1),
     }),
