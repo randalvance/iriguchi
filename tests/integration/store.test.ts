@@ -81,9 +81,13 @@ describe("store", () => {
       app_token: "tok-1",
       manifest: fixtureManifest(),
     });
+    // Verify the agent IS present before delete (otherwise the post-delete
+    // assertion would pass trivially).
+    expect(store.lookupAgent("weather-app-bot")?.app.id).toBe("weather-app");
+
     store.deleteApp("weather-app");
     expect(store.getApp("weather-app")).toBeNull();
-    expect(store.lookupAgent("weather-bot")).toBeNull();
+    expect(store.lookupAgent("weather-app-bot")).toBeNull();
   });
 
   it("listApps returns all rows", () => {
