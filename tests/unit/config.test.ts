@@ -41,6 +41,9 @@ describe("loadConfig", () => {
     expect(cfg.defaultModel).toBe("claude-opus-4-8");
     expect(cfg.maxAgentTurns).toBe(5);
     expect(cfg.anthropicBaseUrl).toBe("http://localhost:11434");
+    expect(cfg.toolCallTimeoutMs).toBe(1000);
+    expect(cfg.manifestCacheTtlMs).toBe(60000);
+    expect(cfg.requestTimeoutMs).toBe(120000);
   });
 
   it.each(["ANTHROPIC_API_KEY", "IRI_API_KEY", "IRI_REGISTRATION_SECRET"])(
