@@ -88,4 +88,44 @@ describe("materializeSkills", () => {
       }),
     ).rejects.toThrow();
   });
+
+  it("throws with HTTP status message on URL fetch returning 5xx", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => new Response("server fail", { status: 503 }),
+    });
+    try {
+      await expect(
+        materializeSkills({
+          tmpDir: root,
+          agentId: "bot",
+          skills: [{ name: "broken", url: `http://localhost:${server.port}/s.md` }],
+        }),
+      ).rejects.toThrow(/failed to fetch skill broken: HTTP 503/);
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("aborts URL fetch after skillFetchTimeoutMs", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: async () => {
+        await Bun.sleep(200);
+        return new Response("late");
+      },
+    });
+    try {
+      await expect(
+        materializeSkills({
+          tmpDir: root,
+          agentId: "bot",
+          skills: [{ name: "slow", url: `http://localhost:${server.port}/s.md` }],
+          skillFetchTimeoutMs: 50,
+        }),
+      ).rejects.toThrow();
+    } finally {
+      server.stop();
+    }
+  });
 });

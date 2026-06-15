@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile, readdir } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Skill } from "../registry/schema.ts";
 
@@ -6,6 +6,7 @@ export async function materializeSkills(opts: {
   tmpDir: string;
   agentId: string;
   skills: Skill[];
+  skillFetchTimeoutMs?: number;
 }): Promise<string> {
   const cwd = join(opts.tmpDir, "agents", opts.agentId);
   const skillsRoot = join(cwd, ".claude", "skills");
@@ -27,11 +28,18 @@ export async function materializeSkills(opts: {
     if (skill.content !== undefined) {
       content = skill.content;
     } else if (skill.url) {
-      const res = await fetch(skill.url);
-      if (!res.ok) {
-        throw new Error(`failed to fetch skill ${skill.name}: HTTP ${res.status}`);
+      const ctrl = new AbortController();
+      const fetchTimeoutMs = opts.skillFetchTimeoutMs ?? 10000;
+      const timer = setTimeout(() => ctrl.abort(), fetchTimeoutMs);
+      try {
+        const res = await fetch(skill.url, { signal: ctrl.signal });
+        if (!res.ok) {
+          throw new Error(`failed to fetch skill ${skill.name}: HTTP ${res.status}`);
+        }
+        content = await res.text();
+      } finally {
+        clearTimeout(timer);
       }
-      content = await res.text();
     } else {
       throw new Error(`skill ${skill.name} has neither content nor url`);
     }
