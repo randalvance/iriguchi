@@ -4,6 +4,7 @@ import { loadConfig } from "./config.ts";
 import { createLogger, type Logger } from "./logger.ts";
 import { createStore, type Store } from "./registry/store.ts";
 import { openaiRoutes } from "./routes/openai.ts";
+import { registrationRoutes } from "./routes/registration.ts";
 
 export type AppDeps = {
   config: Config;
@@ -19,6 +20,7 @@ export function buildApp(deps: AppDeps) {
   app.get("/healthz", (c) => c.json({ status: "ok" }));
 
   app.route("/v1", openaiRoutes({ config: deps.config, store, logger }));
+  app.route("/apps", registrationRoutes({ config: deps.config, store, logger }));
 
   return app;
 }
