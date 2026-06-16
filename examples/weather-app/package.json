@@ -1,0 +1,13 @@
+{
+  "name": "iriguchi-example-weather",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/server.ts",
+    "start": "bun src/server.ts"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
+  }
+}
