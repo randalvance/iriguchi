@@ -37,6 +37,23 @@ export function openaiRoutes(deps: { config: Config; store: Store; logger: Logge
         400,
       );
     }
+    if (
+      !body.messages.every(
+        (m: unknown) =>
+          typeof (m as any)?.role === "string" &&
+          typeof (m as any)?.content === "string",
+      )
+    ) {
+      return c.json(
+        {
+          error: {
+            type: "invalid_request_error",
+            message: "each message must have role and content as strings",
+          },
+        },
+        400,
+      );
+    }
     const showToolCalls = c.req.query("iri_show_tool_calls") === "true";
     logger.info("request.start", {
       method: "POST",
@@ -118,7 +135,7 @@ export function openaiRoutes(deps: { config: Config; store: Store; logger: Logge
       }
       logger.error("request.unhandled_error", { err: (err as Error).message });
       return c.json(
-        { error: { type: "internal_error", message: (err as Error).message } },
+        { error: { type: "internal_error", message: "internal server error" } },
         500,
         { "X-Request-Id": requestId },
       );

@@ -131,4 +131,33 @@ describe("POST /v1/chat/completions", () => {
       fake.stop();
     }
   });
+
+  it("rejects malformed messages with 400", async () => {
+    const app = buildApp({ config: baseCfg(), store });
+    const res = await app.fetch(
+      new Request("http://x/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer client-key" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          messages: [{ role: 42, content: "hi" }],
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.error.message).toMatch(/role and content/i);
+  });
+
+  it("rejects malformed JSON with 400", async () => {
+    const app = buildApp({ config: baseCfg(), store });
+    const res = await app.fetch(
+      new Request("http://x/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer client-key" },
+        body: "not-json",
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
 });
