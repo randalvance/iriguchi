@@ -18,7 +18,7 @@ export function buildApp(deps: AppDeps) {
 
   app.get("/healthz", (c) => c.json({ status: "ok" }));
 
-  app.route("/v1", openaiRoutes({ config: deps.config }));
+  app.route("/v1", openaiRoutes({ config: deps.config, store, logger }));
 
   return app;
 }
