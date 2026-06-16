@@ -3,6 +3,7 @@ import type { Config } from "./config.ts";
 import { loadConfig } from "./config.ts";
 import { createLogger, type Logger } from "./logger.ts";
 import { createStore, type Store } from "./registry/store.ts";
+import { openaiRoutes } from "./routes/openai.ts";
 
 export type AppDeps = {
   config: Config;
@@ -17,9 +18,7 @@ export function buildApp(deps: AppDeps) {
 
   app.get("/healthz", (c) => c.json({ status: "ok" }));
 
-  // Routes mounted in later tasks.
-  // app.route("/v1", openaiRoutes({ config: deps.config, store, logger }));
-  // app.route("/apps", registrationRoutes({ config: deps.config, store, logger }));
+  app.route("/v1", openaiRoutes({ config: deps.config }));
 
   return app;
 }
