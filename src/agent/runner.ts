@@ -1,11 +1,11 @@
 import { ulid } from "ulid";
 import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
 import type { Config } from "../config.ts";
 import type { Store, AgentLookup } from "../registry/store.ts";
 import type { Tool, Agent } from "../registry/schema.ts";
 import { materializeSkills } from "./skills.ts";
 import { invokeApiCallTool } from "./tools.ts";
+import { jsonSchemaToZodRawShape } from "./json-schema-to-zod.ts";
 import {
   translateSdkEvent,
   formatSseChunk,
@@ -77,28 +77,42 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
     skills: agent?.skills ?? [],
   });
 
-  const mcpTools = (agent?.tools ?? []).map((t) =>
-    tool(
+  const mcpTools = (agent?.tools ?? []).map((t) => {
+    const paramShape = jsonSchemaToZodRawShape(
+      t.parameters as Record<string, unknown>,
+    );
+    return tool(
       t.name,
       t.description,
-      // Pass a plain ZodRawShape with a catch-all args field.
-      // The actual parameter validation is done by invokeApiCallTool.
-      { args: z.record(z.string(), z.unknown()).optional() },
-      async (parsed: { args?: Record<string, unknown> }) => {
-        // The SDK passes the full input as the parsed object; unwrap if
-        // nested under `args`, otherwise use the parsed object itself.
-        const input = (parsed.args ?? parsed) as Record<string, unknown>;
-        const result = await invokeApiCallTool({
-          tool: t as Tool,
-          baseUrl: lookup!.app.base_url,
-          appToken: lookup!.app.app_token,
-          input,
-          defaultTimeoutMs: config.toolCallTimeoutMs,
-        });
-        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+      paramShape,
+      async (args: Record<string, unknown>) => {
+        if (!lookup) {
+          throw new Error("internal: tool handler invoked without app lookup");
+        }
+        try {
+          const result = await invokeApiCallTool({
+            tool: t as Tool,
+            baseUrl: lookup.app.base_url,
+            appToken: lookup.app.app_token,
+            input: args,
+            defaultTimeoutMs: config.toolCallTimeoutMs,
+          });
+          return {
+            content: [{ type: "text", text: JSON.stringify(result) }],
+          };
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({ error: (err as Error).message }),
+              },
+            ],
+          };
+        }
       },
-    ),
-  );
+    );
+  });
 
   const mcpServer =
     mcpTools.length > 0
