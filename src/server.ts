@@ -5,6 +5,7 @@ import { createLogger, type Logger } from "./logger.ts";
 import { createStore, type Store } from "./registry/store.ts";
 import { openaiRoutes } from "./routes/openai.ts";
 import { registrationRoutes } from "./routes/registration.ts";
+import { startBackgroundRefresh } from "./registry/refresher.ts";
 
 export type AppDeps = {
   config: Config;
@@ -18,7 +19,6 @@ export function buildApp(deps: AppDeps) {
   const app = new Hono();
 
   app.get("/healthz", (c) => c.json({ status: "ok" }));
-
   app.route("/v1", openaiRoutes({ config: deps.config, store, logger }));
   app.route("/apps", registrationRoutes({ config: deps.config, store, logger }));
 
@@ -28,7 +28,14 @@ export function buildApp(deps: AppDeps) {
 if (import.meta.main) {
   const config = loadConfig();
   const logger = createLogger();
-  const app = buildApp({ config, logger });
+  const store = createStore({ dbPath: config.dbPath });
+  const app = buildApp({ config, store, logger });
   Bun.serve({ port: config.port, fetch: app.fetch });
+  startBackgroundRefresh({
+    store,
+    logger,
+    ttlMs: config.manifestCacheTtlMs,
+    intervalMs: 30000,
+  });
   logger.info("server.start", { port: config.port });
 }
