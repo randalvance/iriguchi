@@ -24,12 +24,13 @@ async function callOnce(opts: {
       method: opts.method,
       headers: {
         Authorization: `Bearer ${opts.appToken}`,
-        "Content-Type": "application/json",
         Accept: "application/json",
       },
     };
-    if (opts.method !== "GET" && opts.method !== "HEAD") {
+    const bodylessMethods = new Set(["GET", "HEAD", "DELETE"]);
+    if (!bodylessMethods.has(opts.method)) {
       (init as any).body = JSON.stringify(opts.body);
+      (init.headers as Record<string, string>)["Content-Type"] = "application/json";
     }
     const res = await fetchWithTimeout(opts.url, init, opts.timeoutMs);
     let body: unknown = null;
@@ -62,8 +63,17 @@ export async function invokeApiCallTool(opts: {
     throw new Error(`unsupported tool type: ${(opts.tool as any).type}`);
   }
   const timeoutMs = opts.tool.timeout_ms ?? opts.defaultTimeoutMs;
-  const url = new URL(opts.tool.endpoint.path, opts.baseUrl).toString();
+  let url = opts.baseUrl.replace(/\/$/, "") + opts.tool.endpoint.path;
   const method = opts.tool.endpoint.method;
+  if (method === "GET" && Object.keys(opts.input).length > 0) {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(opts.input)) {
+      if (v === undefined || v === null) continue;
+      params.set(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+    }
+    const qs = params.toString();
+    if (qs) url += (url.includes("?") ? "&" : "?") + qs;
+  }
 
   let attempt = await callOnce({ url, method, body: opts.input, appToken: opts.appToken, timeoutMs });
   // Retry once on 5xx, timeout, or network error.

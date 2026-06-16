@@ -127,7 +127,7 @@ describe("invokeApiCallTool", () => {
     }
   });
 
-  it("uses GET when method=GET (no body)", async () => {
+  it("serializes GET tool input as query parameters", async () => {
     let captured: { method?: string; url?: string } = {};
     const server = spinUp((c) => {
       captured.method = c.req.method;
@@ -139,11 +139,80 @@ describe("invokeApiCallTool", () => {
         tool: { ...SAMPLE_TOOL, endpoint: { method: "GET", path: "/api/ping" } },
         baseUrl: `http://localhost:${server.port}`,
         appToken: "t",
-        input: { ignored: true },
+        input: { q: "hello world", days: 3 },
         defaultTimeoutMs: 1000,
       });
       expect(captured.method).toBe("GET");
-      expect(captured.url).toContain("/api/ping");
+      expect(captured.url).toContain("/api/ping?");
+      expect(captured.url).toContain("q=hello+world");
+      expect(captured.url).toContain("days=3");
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("preserves baseUrl path prefix when concatenating the tool's endpoint path", async () => {
+    let captured: { url?: string } = {};
+    const server = spinUp((c) => {
+      captured.url = c.req.url;
+      return Response.json({ ok: true });
+    });
+    try {
+      await invokeApiCallTool({
+        tool: { ...SAMPLE_TOOL, endpoint: { method: "POST", path: "/widgets" } },
+        baseUrl: `http://localhost:${server.port}/v1`,
+        appToken: "t",
+        input: {},
+        defaultTimeoutMs: 1000,
+      });
+      expect(captured.url).toContain("/v1/widgets");
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("trims trailing slash on baseUrl when concatenating", async () => {
+    let captured: { url?: string } = {};
+    const server = spinUp((c) => {
+      captured.url = c.req.url;
+      return Response.json({ ok: true });
+    });
+    try {
+      await invokeApiCallTool({
+        tool: { ...SAMPLE_TOOL, endpoint: { method: "POST", path: "/api/forecast" } },
+        baseUrl: `http://localhost:${server.port}/`,
+        appToken: "t",
+        input: {},
+        defaultTimeoutMs: 1000,
+      });
+      expect(captured.url).toContain("/api/forecast");
+      expect(captured.url).not.toContain("//api");
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("does NOT send a body for DELETE requests", async () => {
+    let captured: { body?: string; ct?: string } = {};
+    const server = spinUp(async (c) => {
+      captured.ct = c.req.header("Content-Type");
+      try {
+        captured.body = await c.req.text();
+      } catch {
+        captured.body = "<unreadable>";
+      }
+      return Response.json({ ok: true });
+    });
+    try {
+      await invokeApiCallTool({
+        tool: { ...SAMPLE_TOOL, endpoint: { method: "DELETE", path: "/api/items/1" } },
+        baseUrl: `http://localhost:${server.port}`,
+        appToken: "t",
+        input: {},
+        defaultTimeoutMs: 1000,
+      });
+      expect(captured.body).toBe("");
+      expect(captured.ct).toBeUndefined();
     } finally {
       server.stop();
     }
