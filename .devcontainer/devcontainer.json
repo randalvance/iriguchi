@@ -1,0 +1,26 @@
+{
+  "name": "Iriguchi",
+  "image": "oven/bun:1",
+  "remoteUser": "bun",
+  "workspaceFolder": "/workspaces/iriguchi",
+  "forwardPorts": [4000, 4001],
+  "portsAttributes": {
+    "4000": { "label": "iriguchi gateway", "onAutoForward": "notify" },
+    "4001": { "label": "weather-app demo", "onAutoForward": "silent" }
+  },
+  "postCreateCommand": "bun install && cd examples/weather-app && bun install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "oven.bun-vscode",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "typescript.tsdk": "node_modules/typescript/lib"
+      }
+    }
+  }
+}
