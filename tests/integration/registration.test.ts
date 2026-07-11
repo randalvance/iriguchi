@@ -41,8 +41,10 @@ const cfg = () => ({
   requestTimeoutMs: 1000,
   dbPath: ":memory:",
   tmpDir: ".iri-tmp",
-  anthropicApiKey: "ak",
-  anthropicBaseUrl: undefined,
+  providers: {
+    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com" },
+  },
+  defaultProvider: "anthropic",
   apiKey: "client-key",
   registrationSecret: "reg-secret",
 });

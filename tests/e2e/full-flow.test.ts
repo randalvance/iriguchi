@@ -9,8 +9,11 @@ const E2E = process.env.IRI_E2E === "1";
 
 (E2E ? describe : describe.skip)("e2e: full flow", () => {
   it("registers an app, calls Claude, gets a real response", async () => {
-    if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY === "test-anthropic-key") {
-      throw new Error("real ANTHROPIC_API_KEY required for e2e");
+    if (
+      !process.env.IRI_PROVIDER_ANTHROPIC_API_KEY ||
+      process.env.IRI_PROVIDER_ANTHROPIC_API_KEY === "test-anthropic-key"
+    ) {
+      throw new Error("real IRI_PROVIDER_ANTHROPIC_API_KEY required for e2e");
     }
     const config = loadConfig({
       ...process.env,

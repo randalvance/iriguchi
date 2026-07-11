@@ -27,8 +27,10 @@ const baseCfg = () => ({
   requestTimeoutMs: 5000,
   dbPath: ":memory:",
   tmpDir: tmp,
-  anthropicApiKey: "ak",
-  anthropicBaseUrl: undefined as string | undefined,
+  providers: {
+    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com" },
+  } as Record<string, { name: string; apiKey: string; baseUrl: string }>,
+  defaultProvider: "anthropic",
   apiKey: "client-key",
   registrationSecret: "reg",
 });
@@ -61,7 +63,12 @@ describe("POST /v1/chat/completions", () => {
   it("streams generic-agent SSE", async () => {
     const fake = spinUpFakeAnthropic({ turns: [{ kind: "text", text: "Hi there" }] });
     try {
-      const cfg = { ...baseCfg(), anthropicBaseUrl: `http://localhost:${fake.port}` };
+      const cfg = {
+        ...baseCfg(),
+        providers: {
+          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}` },
+        },
+      };
       const app = buildApp({ config: cfg, store });
       const res = await app.fetch(
         new Request("http://x/v1/chat/completions", {
@@ -87,7 +94,12 @@ describe("POST /v1/chat/completions", () => {
   it("returns 404 for unknown iri_agent", async () => {
     const fake = spinUpFakeAnthropic({ turns: [{ kind: "text", text: "unused" }] });
     try {
-      const cfg = { ...baseCfg(), anthropicBaseUrl: `http://localhost:${fake.port}` };
+      const cfg = {
+        ...baseCfg(),
+        providers: {
+          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}` },
+        },
+      };
       const app = buildApp({ config: cfg, store });
       const res = await app.fetch(
         new Request("http://x/v1/chat/completions", {
@@ -112,7 +124,12 @@ describe("POST /v1/chat/completions", () => {
   it("includes X-Request-Id header", async () => {
     const fake = spinUpFakeAnthropic({ turns: [{ kind: "text", text: "x" }] });
     try {
-      const cfg = { ...baseCfg(), anthropicBaseUrl: `http://localhost:${fake.port}` };
+      const cfg = {
+        ...baseCfg(),
+        providers: {
+          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}` },
+        },
+      };
       const app = buildApp({ config: cfg, store });
       const res = await app.fetch(
         new Request("http://x/v1/chat/completions", {

@@ -38,7 +38,7 @@ export type ChatRequest = {
 export type RunnerOpts = {
   config: Pick<
     Config,
-    "defaultModel" | "tmpDir" | "maxAgentTurns" | "toolCallTimeoutMs" | "anthropicApiKey" | "anthropicBaseUrl"
+    "defaultModel" | "tmpDir" | "maxAgentTurns" | "toolCallTimeoutMs" | "providers" | "defaultProvider"
   >;
   store: Store;
   request: ChatRequest;
@@ -119,43 +119,47 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
       ? createSdkMcpServer({ name: "iriguchi-app-tools", version: "1.0.0", tools: mcpTools })
       : undefined;
 
-  const prevKey = process.env.ANTHROPIC_API_KEY;
-  const prevBase = process.env.ANTHROPIC_BASE_URL;
-  process.env.ANTHROPIC_API_KEY = config.anthropicApiKey;
-  if (config.anthropicBaseUrl) process.env.ANTHROPIC_BASE_URL = config.anthropicBaseUrl;
-
-  try {
-    for (const c of translateSdkEvent({ type: "stream_start" }, tCtx)) {
-      yield formatSseChunk(c);
-    }
-
-    const prompt = buildPrompt(request.messages);
-    const sdkOptions: Record<string, unknown> = {
-      model,
-      systemPrompt,
-      cwd,
-      maxTurns: config.maxAgentTurns,
-      settingSources: ["project"] as const,
-      skills: "all" as const,
-    };
-    if (mcpServer) sdkOptions.mcpServers = { app: mcpServer };
-
-    const sdkStream = query({ prompt, options: sdkOptions as any });
-    for await (const evt of adaptSdkStream(sdkStream)) {
-      for (const c of translateSdkEvent(evt, tCtx)) {
-        yield formatSseChunk(c);
-      }
-    }
-    for (const c of translateSdkEvent({ type: "done", reason: "stop" }, tCtx)) {
-      yield formatSseChunk(c);
-    }
-    yield DONE_SENTINEL;
-  } finally {
-    if (prevKey !== undefined) process.env.ANTHROPIC_API_KEY = prevKey;
-    else delete process.env.ANTHROPIC_API_KEY;
-    if (prevBase !== undefined) process.env.ANTHROPIC_BASE_URL = prevBase;
-    else delete process.env.ANTHROPIC_BASE_URL;
+  const providerName = config.defaultProvider;
+  const provider = config.providers[providerName];
+  if (!provider) {
+    throw new GatewayError(
+      500,
+      "internal_error",
+      `provider "${providerName}" resolved but not present in config.providers`,
+      "unknown_provider",
+    );
   }
+
+  for (const c of translateSdkEvent({ type: "stream_start" }, tCtx)) {
+    yield formatSseChunk(c);
+  }
+
+  const prompt = buildPrompt(request.messages);
+  const sdkOptions: Record<string, unknown> = {
+    model,
+    systemPrompt,
+    cwd,
+    maxTurns: config.maxAgentTurns,
+    settingSources: ["project"] as const,
+    skills: "all" as const,
+    env: {
+      ...process.env,
+      ANTHROPIC_API_KEY: provider.apiKey,
+      ANTHROPIC_BASE_URL: provider.baseUrl,
+    },
+  };
+  if (mcpServer) sdkOptions.mcpServers = { app: mcpServer };
+
+  const sdkStream = query({ prompt, options: sdkOptions as any });
+  for await (const evt of adaptSdkStream(sdkStream)) {
+    for (const c of translateSdkEvent(evt, tCtx)) {
+      yield formatSseChunk(c);
+    }
+  }
+  for (const c of translateSdkEvent({ type: "done", reason: "stop" }, tCtx)) {
+    yield formatSseChunk(c);
+  }
+  yield DONE_SENTINEL;
 }
 
 function buildPrompt(messages: ChatRequest["messages"]): string {

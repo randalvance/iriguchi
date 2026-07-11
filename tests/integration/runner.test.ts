@@ -24,7 +24,14 @@ const baseConfig = () => ({
   tmpDir: tmp,
   maxAgentTurns: 5,
   toolCallTimeoutMs: 1000,
-  anthropicApiKey: "ak-test",
+  providers: {
+    anthropic: {
+      name: "anthropic",
+      apiKey: "ak-test",
+      baseUrl: "https://api.anthropic.com",
+    },
+  } as Record<string, { name: string; apiKey: string; baseUrl: string }>,
+  defaultProvider: "anthropic",
 });
 
 async function collect(stream: AsyncIterable<string>): Promise<string> {
@@ -38,7 +45,12 @@ describe("runAgentStream — generic agent (no iri_agent)", () => {
     const fake = spinUpFakeAnthropic({ turns: [{ kind: "text", text: "Hello world" }] });
     try {
       const stream = runAgentStream({
-        config: { ...baseConfig(), anthropicBaseUrl: `http://localhost:${fake.port}` },
+        config: {
+          ...baseConfig(),
+          providers: {
+            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}` },
+          },
+        },
         store,
         request: { requestId: "01H", agentId: null, model: "claude-sonnet-4-6", messages: [{ role: "user", content: "hi" }], showToolCalls: false },
       });
@@ -96,7 +108,12 @@ describe("runAgentStream — app-owned agent with tool call", () => {
         },
       });
       const stream = runAgentStream({
-        config: { ...baseConfig(), anthropicBaseUrl: `http://localhost:${fake.port}` },
+        config: {
+          ...baseConfig(),
+          providers: {
+            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}` },
+          },
+        },
         store,
         request: { requestId: "01H", agentId: "weather-bot", model: null, messages: [{ role: "user", content: "weather in NYC?" }], showToolCalls: false },
       });
@@ -113,7 +130,12 @@ describe("runAgentStream — app-owned agent with tool call", () => {
     const fake = spinUpFakeAnthropic({ turns: [{ kind: "text", text: "unused" }] });
     try {
       const stream = runAgentStream({
-        config: { ...baseConfig(), anthropicBaseUrl: `http://localhost:${fake.port}` },
+        config: {
+          ...baseConfig(),
+          providers: {
+            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}` },
+          },
+        },
         store,
         request: { requestId: "01H", agentId: "missing-bot", model: null, messages: [{ role: "user", content: "x" }], showToolCalls: false },
       });
