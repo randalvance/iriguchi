@@ -1,0 +1,29 @@
+{
+  "name": "iriguchi",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "..",
+    "args": {
+      "NODE_MAJOR": "24",
+      "PYTHON_VERSION": "3.14.0",
+      "USERNAME": "vscode",
+      "USER_UID": "1000",
+      "USER_GID": "1000"
+    }
+  },
+  "workspaceFolder": "/workspaces/iriguchi",
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python3"
+      }
+    }
+  },
+  "postCreateCommand": "node --version && npm --version && python3 --version && claude --version"
+}
