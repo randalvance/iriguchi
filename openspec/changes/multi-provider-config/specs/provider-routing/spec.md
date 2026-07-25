@@ -74,7 +74,7 @@ Registration and manual manifest refresh SHALL reject a manifest atomically with
 
 #### Scenario: Background refresh keeps stale manifest
 - **WHEN** a background refresh fetches a manifest referencing a provider no longer configured
-- **THEN** the gateway logs `refresh_rejected` with reason `unknown_provider` and continues serving the prior manifest
+- **THEN** the gateway logs `manifest.refresh_failed` with reason `unknown_provider` and continues serving the prior manifest
 
 ### Requirement: Model listing reflects the default provider
 `GET /v1/models` SHALL list exactly the default provider's `defaultModel` and SHALL NOT include hardcoded model ids.
