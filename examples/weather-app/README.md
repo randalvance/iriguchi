@@ -8,7 +8,9 @@ A minimal Bun/Hono app that registers itself with the Iriguchi gateway, exposes 
    ```bash
    IRI_API_KEY=mykey \
    IRI_REGISTRATION_SECRET=regsecret \
-   ANTHROPIC_API_KEY=sk-... \
+   IRI_PROVIDER_ANTHROPIC_API_KEY=sk-... \
+   IRI_PROVIDER_ANTHROPIC_BASE_URL=https://api.anthropic.com \
+   IRI_PROVIDER_ANTHROPIC_DEFAULT_MODEL=claude-opus-5 \
    bun run dev
    ```
 2. Start this app in another terminal:

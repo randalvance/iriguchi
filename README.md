@@ -4,11 +4,11 @@ Iriguchi (Japanese: "entrance / gateway") is an AI gateway: a single OpenAI-comp
 
 - **Stack:** Bun, Hono, Zod, `@anthropic-ai/claude-agent-sdk`, `bun:sqlite`.
 - **OpenAI compat:** Vanilla `/v1/chat/completions` works with OpenWebUI, OpenCode, and other OpenAI-compatible clients. App-aware mode is opt-in via the `iri_agent` field.
-- **Local LLM:** Set `ANTHROPIC_BASE_URL` to point at Ollama (≥ 0.14.0) or LM Studio (≥ 0.4.1), both of which expose the Anthropic `/v1/messages` API natively.
+- **Multi-provider:** Named Anthropic-shaped backends configured side by side — Anthropic direct, OpenRouter's Anthropic endpoint, or local Ollama (≥ 0.14.0) / LM Studio (≥ 0.4.1), both of which expose the Anthropic `/v1/messages` API natively. Agents pick their provider in their manifest.
 
 ## Quickstart
 
-1. Copy `.env.example` to `.env` and fill in `ANTHROPIC_API_KEY`, `IRI_API_KEY`, `IRI_REGISTRATION_SECRET`.
+1. Copy `.env.example` to `.env` and fill in `IRI_API_KEY`, `IRI_REGISTRATION_SECRET`, and at least one provider triple (`IRI_PROVIDER_<NAME>_API_KEY` / `_BASE_URL` / `_DEFAULT_MODEL`).
 2. Start the gateway:
    ```bash
    bun install
@@ -21,6 +21,41 @@ Iriguchi (Japanese: "entrance / gateway") is an AI gateway: a single OpenAI-comp
    IRI_REGISTRATION_SECRET=$(grep IRI_REGISTRATION_SECRET ../../.env | cut -d= -f2) bun run dev
    ```
 4. Open <http://localhost:4001> and ask "What's the weather in NYC?"
+
+## Providers
+
+Iriguchi routes each request to a named Anthropic-shaped backend. Configure providers via env vars — all three vars are required per provider:
+
+```bash
+IRI_PROVIDER_ANTHROPIC_API_KEY=sk-ant-...
+IRI_PROVIDER_ANTHROPIC_BASE_URL=https://api.anthropic.com
+IRI_PROVIDER_ANTHROPIC_DEFAULT_MODEL=claude-opus-5
+
+IRI_PROVIDER_OPENROUTER_API_KEY=sk-or-...
+IRI_PROVIDER_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1/anthropic
+IRI_PROVIDER_OPENROUTER_DEFAULT_MODEL=moonshotai/kimi-k3
+
+IRI_DEFAULT_PROVIDER=anthropic
+```
+
+Only providers speaking the Anthropic `/v1/messages` API are supported today (Anthropic direct, OpenRouter's Anthropic endpoint, LM Studio ≥ 0.4.1, Ollama ≥ 0.14.0, Bedrock/Vertex Claude, or any Anthropic-compat proxy) — but any model behind such an endpoint works, not just Claude. Non-Anthropic-shaped providers (raw OpenAI shape) are out of scope for v1.
+
+Agents opt into a non-default provider in their manifest:
+
+```json
+{
+  "agents": [
+    {
+      "id": "weather-bot",
+      "provider": "openrouter",
+      "default_model": "moonshotai/kimi-k3",
+      ...
+    }
+  ]
+}
+```
+
+Model names are pass-through: write the string your provider expects. An agent that omits `default_model` inherits its routed provider's `DEFAULT_MODEL`. Registration rejects manifests that reference unconfigured providers. `/v1/models` advertises the default provider's default model.
 
 ## Generic OpenAI client usage
 
