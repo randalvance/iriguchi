@@ -12,7 +12,7 @@ export function openaiRoutes(deps: { config: Config; store: Store; logger: Logge
 
   app.get("/models", (c) => {
     const created = Math.floor(Date.now() / 1000);
-    const allowed = [deps.config.defaultModel, "claude-opus-4-8", "claude-haiku-4-5"];
+    const allowed = [deps.config.providers[deps.config.defaultProvider].defaultModel];
     return c.json({
       object: "list",
       data: allowed.map((id) => ({ id, object: "model", created, owned_by: "iriguchi" })),

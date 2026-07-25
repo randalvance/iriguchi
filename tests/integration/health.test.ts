@@ -6,7 +6,6 @@ describe("server", () => {
     const app = buildApp({
       config: {
         port: 0,
-        defaultModel: "x",
         maxAgentTurns: 5,
         toolCallTimeoutMs: 1000,
         manifestCacheTtlMs: 1000,
@@ -14,7 +13,7 @@ describe("server", () => {
         dbPath: ":memory:",
         tmpDir: ".iri-tmp",
         providers: {
-          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com" },
+          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6" },
         },
         defaultProvider: "anthropic",
         apiKey: "k",

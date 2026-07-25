@@ -2,11 +2,11 @@ export type Provider = {
   name: string;
   baseUrl: string;
   apiKey: string;
+  defaultModel: string;
 };
 
 export type Config = {
   port: number;
-  defaultModel: string;
   maxAgentTurns: number;
   toolCallTimeoutMs: number;
   manifestCacheTtlMs: number;
@@ -21,7 +21,7 @@ export type Config = {
 
 const REQUIRED = ["IRI_API_KEY", "IRI_REGISTRATION_SECRET"] as const;
 
-const PROVIDER_KEY_RE = /^IRI_PROVIDER_([A-Z0-9]+)_(API_KEY|BASE_URL)$/;
+const PROVIDER_KEY_RE = /^IRI_PROVIDER_([A-Z0-9]+)_(API_KEY|BASE_URL|DEFAULT_MODEL)$/;
 
 function intVar(env: Record<string, string | undefined>, key: string, fallback: number): number {
   const raw = env[key];
@@ -34,7 +34,7 @@ function intVar(env: Record<string, string | undefined>, key: string, fallback: 
 }
 
 function loadProviders(env: Record<string, string | undefined>): Record<string, Provider> {
-  const seen: Record<string, { apiKey?: string; baseUrl?: string }> = {};
+  const seen: Record<string, { apiKey?: string; baseUrl?: string; defaultModel?: string }> = {};
   for (const [key, val] of Object.entries(env)) {
     if (val === undefined || val === "") continue;
     const m = key.match(PROVIDER_KEY_RE);
@@ -43,7 +43,8 @@ function loadProviders(env: Record<string, string | undefined>): Record<string, 
     const field = m[2];
     seen[name] ??= {};
     if (field === "API_KEY") seen[name].apiKey = val;
-    else seen[name].baseUrl = val;
+    else if (field === "BASE_URL") seen[name].baseUrl = val;
+    else seen[name].defaultModel = val;
   }
   const providers: Record<string, Provider> = {};
   for (const [name, parts] of Object.entries(seen)) {
@@ -57,11 +58,21 @@ function loadProviders(env: Record<string, string | undefined>): Record<string, 
         `half-configured provider "${name}": missing IRI_PROVIDER_${name.toUpperCase()}_BASE_URL`,
       );
     }
-    providers[name] = { name, apiKey: parts.apiKey, baseUrl: parts.baseUrl };
+    if (!parts.defaultModel) {
+      throw new Error(
+        `half-configured provider "${name}": missing IRI_PROVIDER_${name.toUpperCase()}_DEFAULT_MODEL`,
+      );
+    }
+    providers[name] = {
+      name,
+      apiKey: parts.apiKey,
+      baseUrl: parts.baseUrl,
+      defaultModel: parts.defaultModel,
+    };
   }
   if (Object.keys(providers).length === 0) {
     throw new Error(
-      "no providers configured; set IRI_PROVIDER_<NAME>_API_KEY and IRI_PROVIDER_<NAME>_BASE_URL",
+      "no providers configured; set IRI_PROVIDER_<NAME>_API_KEY, IRI_PROVIDER_<NAME>_BASE_URL, and IRI_PROVIDER_<NAME>_DEFAULT_MODEL",
     );
   }
   return providers;
@@ -91,11 +102,15 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   for (const name of REQUIRED) {
     if (!env[name]) throw new Error(`Missing required env var: ${name}`);
   }
+  if (env.IRI_DEFAULT_MODEL) {
+    throw new Error(
+      "IRI_DEFAULT_MODEL is no longer supported; set IRI_PROVIDER_<NAME>_DEFAULT_MODEL per provider",
+    );
+  }
   const providers = loadProviders(env);
   const defaultProvider = resolveDefaultProvider(env, providers);
   return {
     port: intVar(env, "IRI_PORT", 4000),
-    defaultModel: env.IRI_DEFAULT_MODEL || "claude-sonnet-4-6",
     maxAgentTurns: intVar(env, "IRI_MAX_AGENT_TURNS", 20),
     toolCallTimeoutMs: intVar(env, "IRI_TOOL_CALL_TIMEOUT_MS", 30000),
     manifestCacheTtlMs: intVar(env, "IRI_MANIFEST_CACHE_TTL_MS", 300000),

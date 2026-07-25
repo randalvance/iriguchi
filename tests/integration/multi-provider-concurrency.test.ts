@@ -75,7 +75,6 @@ describe("multi-provider concurrency", () => {
       });
 
       const config = {
-        defaultModel: "claude-sonnet-4-6",
         tmpDir: tmp,
         maxAgentTurns: 5,
         toolCallTimeoutMs: 1000,
@@ -84,11 +83,13 @@ describe("multi-provider concurrency", () => {
             name: "provider-a",
             apiKey: "ak-a",
             baseUrl: `http://localhost:${fakeA.port}`,
+            defaultModel: "claude-sonnet-4-6",
           },
           "provider-b": {
             name: "provider-b",
             apiKey: "ak-b",
             baseUrl: `http://localhost:${fakeB.port}`,
+            defaultModel: "claude-sonnet-4-6",
           },
         },
         defaultProvider: "provider-a",

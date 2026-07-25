@@ -3,7 +3,6 @@ import { buildApp } from "../../src/server.ts";
 
 const cfg = {
   port: 0,
-  defaultModel: "claude-sonnet-4-6",
   maxAgentTurns: 5,
   toolCallTimeoutMs: 1000,
   manifestCacheTtlMs: 1000,
@@ -11,7 +10,7 @@ const cfg = {
   dbPath: ":memory:",
   tmpDir: ".iri-tmp",
   providers: {
-    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com" },
+    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6" },
   },
   defaultProvider: "anthropic",
   apiKey: "client-key",
@@ -25,7 +24,7 @@ describe("GET /v1/models", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns OpenAI-shape model list", async () => {
+  it("returns exactly the default provider's default model, no hardcoded ids", async () => {
     const app = buildApp({ config: cfg });
     const res = await app.fetch(
       new Request("http://x/v1/models", {
@@ -36,7 +35,7 @@ describe("GET /v1/models", () => {
     const body = (await res.json()) as any;
     expect(body.object).toBe("list");
     const ids = body.data.map((m: any) => m.id);
-    expect(ids).toContain("claude-sonnet-4-6");
+    expect(ids).toEqual(["claude-sonnet-4-6"]);
     body.data.forEach((m: any) => {
       expect(m.object).toBe("model");
       expect(typeof m.created).toBe("number");

@@ -34,8 +34,8 @@ afterEach(() => {
 
 const refresherConfig = () => ({
   providers: {
-    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com" },
-  } as Record<string, { name: string; apiKey: string; baseUrl: string }>,
+    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6" },
+  } as Record<string, { name: string; apiKey: string; baseUrl: string; defaultModel: string }>,
 });
 
 describe("startBackgroundRefresh", () => {

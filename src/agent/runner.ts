@@ -38,7 +38,7 @@ export type ChatRequest = {
 export type RunnerOpts = {
   config: Pick<
     Config,
-    "defaultModel" | "tmpDir" | "maxAgentTurns" | "toolCallTimeoutMs" | "providers" | "defaultProvider"
+    "tmpDir" | "maxAgentTurns" | "toolCallTimeoutMs" | "providers" | "defaultProvider"
   >;
   store: Store;
   request: ChatRequest;
@@ -66,7 +66,19 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
 
   const agent: Agent | null = lookup?.agent ?? null;
   const systemPrompt = agent?.system_prompt || GENERIC_SYSTEM_PROMPT;
-  const model = request.model || agent?.default_model || config.defaultModel;
+
+  const providerName = agent?.provider ?? config.defaultProvider;
+  const provider = config.providers[providerName];
+  if (!provider) {
+    throw new GatewayError(
+      500,
+      "internal_error",
+      `provider "${providerName}" resolved but not present in config.providers`,
+      "unknown_provider",
+    );
+  }
+
+  const model = request.model || agent?.default_model || provider.defaultModel;
   const chatId = `chatcmpl-${ulid()}`;
   const created = Math.floor(Date.now() / 1000);
   const tCtx = createTranslateContext({ id: chatId, created, model, showToolCalls: request.showToolCalls });
@@ -118,17 +130,6 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
     mcpTools.length > 0
       ? createSdkMcpServer({ name: "iriguchi-app-tools", version: "1.0.0", tools: mcpTools })
       : undefined;
-
-  const providerName = agent?.provider ?? config.defaultProvider;
-  const provider = config.providers[providerName];
-  if (!provider) {
-    throw new GatewayError(
-      500,
-      "internal_error",
-      `provider "${providerName}" resolved but not present in config.providers`,
-      "unknown_provider",
-    );
-  }
 
   for (const c of translateSdkEvent({ type: "stream_start" }, tCtx)) {
     yield formatSseChunk(c);

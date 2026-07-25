@@ -20,7 +20,6 @@ afterEach(async () => {
 
 const baseCfg = () => ({
   port: 0,
-  defaultModel: "claude-sonnet-4-6",
   maxAgentTurns: 5,
   toolCallTimeoutMs: 1000,
   manifestCacheTtlMs: 1000,
@@ -28,8 +27,8 @@ const baseCfg = () => ({
   dbPath: ":memory:",
   tmpDir: tmp,
   providers: {
-    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com" },
-  } as Record<string, { name: string; apiKey: string; baseUrl: string }>,
+    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6" },
+  } as Record<string, { name: string; apiKey: string; baseUrl: string; defaultModel: string }>,
   defaultProvider: "anthropic",
   apiKey: "client-key",
   registrationSecret: "reg",
@@ -66,7 +65,7 @@ describe("POST /v1/chat/completions", () => {
       const cfg = {
         ...baseCfg(),
         providers: {
-          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}` },
+          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
         },
       };
       const app = buildApp({ config: cfg, store });
@@ -97,7 +96,7 @@ describe("POST /v1/chat/completions", () => {
       const cfg = {
         ...baseCfg(),
         providers: {
-          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}` },
+          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
         },
       };
       const app = buildApp({ config: cfg, store });
@@ -127,7 +126,7 @@ describe("POST /v1/chat/completions", () => {
       const cfg = {
         ...baseCfg(),
         providers: {
-          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}` },
+          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
         },
       };
       const app = buildApp({ config: cfg, store });

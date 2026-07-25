@@ -3,7 +3,6 @@ import { buildApp } from "../../src/server.ts";
 
 const cfg = {
   port: 0,
-  defaultModel: "claude-sonnet-4-6",
   maxAgentTurns: 5,
   toolCallTimeoutMs: 1000,
   manifestCacheTtlMs: 1000,
@@ -11,7 +10,7 @@ const cfg = {
   dbPath: ":memory:",
   tmpDir: ".iri-tmp",
   providers: {
-    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com" },
+    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6" },
   },
   defaultProvider: "anthropic",
   apiKey: "client-key",

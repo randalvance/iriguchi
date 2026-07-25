@@ -20,7 +20,6 @@ afterEach(async () => {
 });
 
 const baseConfig = () => ({
-  defaultModel: "claude-sonnet-4-6",
   tmpDir: tmp,
   maxAgentTurns: 5,
   toolCallTimeoutMs: 1000,
@@ -29,8 +28,9 @@ const baseConfig = () => ({
       name: "anthropic",
       apiKey: "ak-test",
       baseUrl: "https://api.anthropic.com",
+      defaultModel: "claude-sonnet-4-6",
     },
-  } as Record<string, { name: string; apiKey: string; baseUrl: string }>,
+  } as Record<string, { name: string; apiKey: string; baseUrl: string; defaultModel: string }>,
   defaultProvider: "anthropic",
 });
 
@@ -48,7 +48,7 @@ describe("runAgentStream — generic agent (no iri_agent)", () => {
         config: {
           ...baseConfig(),
           providers: {
-            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}` },
+            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
           },
         },
         store,
@@ -111,7 +111,7 @@ describe("runAgentStream — app-owned agent with tool call", () => {
         config: {
           ...baseConfig(),
           providers: {
-            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}` },
+            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
           },
         },
         store,
@@ -133,7 +133,7 @@ describe("runAgentStream — app-owned agent with tool call", () => {
         config: {
           ...baseConfig(),
           providers: {
-            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}` },
+            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
           },
         },
         store,
@@ -175,8 +175,8 @@ describe("runAgentStream — agent.provider resolution", () => {
         config: {
           ...baseConfig(),
           providers: {
-            anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fakeDefault.port}` },
-            alt: { name: "alt", apiKey: "ak-alt", baseUrl: `http://localhost:${fakeAlt.port}` },
+            anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fakeDefault.port}`, defaultModel: "claude-sonnet-4-6" },
+            alt: { name: "alt", apiKey: "ak-alt", baseUrl: `http://localhost:${fakeAlt.port}`, defaultModel: "claude-sonnet-4-6" },
           },
           defaultProvider: "anthropic",
         },
@@ -186,6 +186,62 @@ describe("runAgentStream — agent.provider resolution", () => {
       const out = await collect(stream);
       expect(out).toContain("OK_ALT");
       expect(out).not.toContain("WRONG_PROVIDER");
+    } finally {
+      fakeDefault.stop();
+      fakeAlt.stop();
+    }
+  });
+
+  it("agent with provider but no default_model inherits the routed provider's default model", async () => {
+    const fakeDefault = spinUpFakeAnthropic({ turns: [{ kind: "text", text: "unused" }] });
+    const fakeAlt = spinUpFakeAnthropic({ turns: [{ kind: "text", text: "hello" }] });
+    try {
+      store.upsertApp({
+        id: "alt-app",
+        base_url: "http://unused",
+        app_token: "app-tok",
+        manifest: {
+          manifest_version: "1",
+          app: { id: "alt-app", name: "a", description: "a" },
+          agents: [
+            {
+              id: "alt-bot",
+              name: "Alt",
+              description: "d",
+              system_prompt: "you are alt",
+              provider: "alt",
+              tools: [],
+              skills: [],
+            } as any,
+          ],
+        },
+      });
+      const stream = runAgentStream({
+        config: {
+          ...baseConfig(),
+          providers: {
+            anthropic: {
+              name: "anthropic",
+              apiKey: "ak",
+              baseUrl: `http://localhost:${fakeDefault.port}`,
+              defaultModel: "claude-opus-5",
+            },
+            alt: {
+              name: "alt",
+              apiKey: "ak-alt",
+              baseUrl: `http://localhost:${fakeAlt.port}`,
+              defaultModel: "alt-model-9000",
+            },
+          },
+          defaultProvider: "anthropic",
+        },
+        store,
+        request: { requestId: "01H", agentId: "alt-bot", model: null, messages: [{ role: "user", content: "hi" }], showToolCalls: false },
+      });
+      const out = await collect(stream);
+      // The SSE chunks carry the resolved model id.
+      expect(out).toContain("alt-model-9000");
+      expect(out).not.toContain("claude-opus-5");
     } finally {
       fakeDefault.stop();
       fakeAlt.stop();
