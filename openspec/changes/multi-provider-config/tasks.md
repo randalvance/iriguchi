@@ -38,3 +38,4 @@
 
 - [x] 7.1 Full suite green, typecheck clean; grep confirms no live references to `ANTHROPIC_API_KEY|ANTHROPIC_BASE_URL|IRI_DEFAULT_MODEL|config.defaultModel` outside the config legacy-var guard and docs
 - [ ] 7.2 Gated e2e smoke per provider class (Anthropic direct, OpenRouter/Kimi K3, LM Studio/Ornith) exercising one tool-calling turn
+  - Smoke test implemented (`tests/e2e/provider-smoke.test.ts`, gated by `IRI_E2E=1`); the LM Studio run found real incompatibilities (2026-07-25): Ornith's chat template fails LM Studio's tool-parser generation ("System message must be at the beginning") and qwen3-coder-30b exceeds its loaded context window under the Agent SDK's harness prompt. Simple Anthropic-shaped requests (system, tools, streaming, tool_result turns) all work against Ornith — the failure is specific to the full harness request. Anthropic/OpenRouter smokes pending real API keys.

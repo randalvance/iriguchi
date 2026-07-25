@@ -37,7 +37,7 @@ Reference deployment: `lmstudio` (`http://localhost:1234`, model `ornith-1.0-35b
 
 ## Risks / Trade-offs
 
-- [Non-Claude models behind the Claude-tuned SDK loop may follow tool-use prompting poorly] → gated e2e smoke per provider class (Anthropic direct, OpenRouter/Kimi, LM Studio/Ornith); first run of each smoke is the acceptance check.
+- [Non-Claude models behind the Claude-tuned SDK loop may follow tool-use prompting poorly] → gated e2e smoke per provider class (Anthropic direct, OpenRouter/Kimi, LM Studio/Ornith); first run of each smoke is the acceptance check. **Confirmed real (2026-07-25):** the LM Studio smoke fails before prompting quality is even in play — Ornith's chat template breaks LM Studio's tool-parser generation under the Agent SDK's harness request, and qwen3-coder-30b overflows its loaded context window on the harness prompt. Local models need a large configured context and a harness-compatible chat template; simple Anthropic-shaped requests work fine either way.
 - [LM Studio's Anthropic `/v1/messages` surface unverified on this machine (server was down)] → verified implicitly by the LM Studio smoke; base URL `http://localhost:1234` already confirmed against the Hermes config using the same server.
 - [Breaking env change strands stale `.env` files] → startup fails loudly for missing providers and for legacy `IRI_DEFAULT_MODEL`; single-PR atomic rollout, no dual-read window; `.env.example` rewritten.
 - [Concurrency isolation is claimed but only provable under load] → dedicated integration test: two providers backed by two fake Anthropic servers, concurrent requests, assert each landed on its own baseUrl.
