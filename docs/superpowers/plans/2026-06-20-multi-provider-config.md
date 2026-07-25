@@ -4,7 +4,7 @@
 
 **Goal:** Replace the single-provider Anthropic wiring with a named-provider registry so the gateway can route different agents to Anthropic direct, OpenRouter's Anthropic endpoint, and future Anthropic-compat backends concurrently.
 
-**Architecture:** Server config exposes `providers: Record<string, {name, baseUrl, apiKey}>` and a `defaultProvider` name. Agent manifests gain an optional `provider` field. The runner resolves `agent?.provider ?? config.defaultProvider` and passes that provider's `apiKey` / `baseUrl` to the Claude Agent SDK via the SDK's per-query `env` option (no `process.env` mutation, no cross-request leakage). Registration rejects manifests that reference unknown providers.
+**Architecture:** Server config exposes `providers: Record<string, {name, baseUrl, apiKey, defaultModel}>` and a `defaultProvider` name. Agent manifests gain an optional `provider` field. The runner resolves `agent?.provider ?? config.defaultProvider` and passes that provider's `apiKey` / `baseUrl` to the Claude Agent SDK via the SDK's per-query `env` option (no `process.env` mutation, no cross-request leakage). Registration rejects manifests that reference unknown providers. *(Amended 2026-07-25, design v2:)* each provider carries a required `defaultModel`; the global `IRI_DEFAULT_MODEL` is removed and the model chain becomes `request.model || agent.default_model || provider.defaultModel` (Task 5).
 
 **Tech Stack:** Bun, Hono, Zod v4, `@anthropic-ai/claude-agent-sdk`, `bun:sqlite`.
 
@@ -13,7 +13,8 @@
 - Providers must speak the Anthropic `/v1/messages` shape. Non-Anthropic-shaped providers are out of scope.
 - No backward compatibility with `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL`. Remove those env vars entirely.
 - No client-side provider override (`iri_provider` in request body is explicitly disallowed).
-- Env-var pattern: `IRI_PROVIDER_<UPPERCASE_ALPHANUMERIC_NAME>_API_KEY` and `IRI_PROVIDER_<UPPERCASE_ALPHANUMERIC_NAME>_BASE_URL`. Provider names are `[A-Z0-9]+` in env keys, stored lowercased in the registry.
+- Env-var pattern: `IRI_PROVIDER_<UPPERCASE_ALPHANUMERIC_NAME>_API_KEY`, `..._BASE_URL`, and (Task 5) `..._DEFAULT_MODEL`. Provider names are `[A-Z0-9]+` in env keys, stored lowercased in the registry.
+- (Task 5) All three provider vars are required per provider; `IRI_DEFAULT_MODEL` is removed and its presence in the env is a startup error. Models are not Claude-only: any model behind an Anthropic-shaped endpoint is in scope (design decision 1, as amended).
 - Agent manifest `provider` field: optional; when set, `z.string().min(1)`.
 - Startup fails fast if: no providers configured; a half-configured provider (only one of API_KEY / BASE_URL); `IRI_DEFAULT_PROVIDER` names an unknown provider; or `IRI_DEFAULT_PROVIDER` is unset with more than one provider configured.
 - Full test suite (`bun test`) must be green at the end of every task's final commit. Typecheck (`bun run typecheck`) must be clean at the end of every task.
@@ -1195,7 +1196,57 @@ EOF
 
 ---
 
-## Task 5: Docs — .env.example, README, examples/weather-app
+## Task 5: Per-provider default models — config, runner, /v1/models
+
+*(Added 2026-07-25 per design v2.)*
+
+**Files:**
+- Modify: `src/config.ts`
+- Modify: `src/agent/runner.ts`
+- Modify: `src/routes/openai.ts`
+- Modify: `tests/setup.ts`
+- Modify: `tests/unit/config.test.ts`
+- Modify: `tests/integration/models.test.ts`
+- Modify: `tests/integration/runner.test.ts`
+
+**Interfaces:**
+- Produces: `Provider.defaultModel: string` (required). `Config.defaultModel` REMOVED. Model chain in the runner becomes `request.model || agent?.default_model || provider.defaultModel`, where `provider` is the already-resolved routed provider. `/v1/models` returns exactly `[providers[defaultProvider].defaultModel]` — the hardcoded `claude-opus-4-8` / `claude-haiku-4-5` entries are dropped.
+
+- [ ] **Step 1: Write failing config tests** — extend `tests/unit/config.test.ts`: provider parses `IRI_PROVIDER_<NAME>_DEFAULT_MODEL` into `defaultModel`; missing `_DEFAULT_MODEL` throws the half-configured error naming that suffix; presence of legacy `IRI_DEFAULT_MODEL` throws `"IRI_DEFAULT_MODEL is no longer supported; set IRI_PROVIDER_<NAME>_DEFAULT_MODEL per provider"`; `cfg.defaultModel` no longer exists (type-level: remove all expectations on it). Update `baseEnv()` fixtures to include `IRI_PROVIDER_ANTHROPIC_DEFAULT_MODEL`.
+
+- [ ] **Step 2: Run config tests to see them fail** — `bun test tests/unit/config.test.ts`
+
+- [ ] **Step 3: Implement in `src/config.ts`** — widen `PROVIDER_KEY_RE` to `(API_KEY|BASE_URL|DEFAULT_MODEL)`, require all three per discovered name, drop `defaultModel` from `Config`, add the legacy-var guard.
+
+- [ ] **Step 4: Update `tests/setup.ts`** — add `IRI_PROVIDER_ANTHROPIC_DEFAULT_MODEL=claude-opus-5`; remove any `IRI_DEFAULT_MODEL`.
+
+- [ ] **Step 5: Write failing runner test** — agent with `provider` set but no `default_model` resolves to the *routed* provider's `defaultModel` (register two providers with distinct defaults to prove it's not the gateway default); `request.model` still wins over everything.
+
+- [ ] **Step 6: Update `src/agent/runner.ts`** — replace `config.defaultModel` fallback with `provider.defaultModel`; ensure provider resolution happens before model resolution.
+
+- [ ] **Step 7: Update `/v1/models` in `src/routes/openai.ts`** — return only the default provider's `defaultModel`; update `tests/integration/models.test.ts` accordingly.
+
+- [ ] **Step 8: Run the full test suite and typecheck** — `bun test` green, `bun run typecheck` clean. Grep `defaultModel` in `src/` to confirm the only remaining references are `Provider.defaultModel`.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/config.ts src/agent/runner.ts src/routes/openai.ts tests/
+git commit -m "$(cat <<'EOF'
+feat(config): require per-provider default model, remove global IRI_DEFAULT_MODEL
+
+Each provider now carries IRI_PROVIDER_<NAME>_DEFAULT_MODEL. The runner's
+model chain falls through request.model -> agent.default_model ->
+routed provider's defaultModel, so an agent that picks a provider without
+pinning a model always gets a model that provider serves. /v1/models
+advertises only the default provider's default model.
+EOF
+)"
+```
+
+---
+
+## Task 6: Docs — .env.example, README, examples/weather-app
 
 **Files:**
 - Modify: `.env.example`
@@ -1216,12 +1267,20 @@ IRI_API_KEY=
 IRI_REGISTRATION_SECRET=
 
 # Providers — configure one or more. Name is arbitrary uppercase alphanumeric.
+# Each provider requires all three vars: API_KEY, BASE_URL, DEFAULT_MODEL.
 IRI_PROVIDER_ANTHROPIC_API_KEY=
 IRI_PROVIDER_ANTHROPIC_BASE_URL=https://api.anthropic.com
+IRI_PROVIDER_ANTHROPIC_DEFAULT_MODEL=claude-opus-5
 
-# Example: OpenRouter via its Anthropic-compat endpoint (only reaches Claude models).
+# Example: OpenRouter via its Anthropic-compat endpoint (any model it serves).
 # IRI_PROVIDER_OPENROUTER_API_KEY=sk-or-...
 # IRI_PROVIDER_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1/anthropic
+# IRI_PROVIDER_OPENROUTER_DEFAULT_MODEL=moonshotai/kimi-k3
+
+# Example: local LM Studio (API key required non-empty but unused).
+# IRI_PROVIDER_LMSTUDIO_API_KEY=lm-studio
+# IRI_PROVIDER_LMSTUDIO_BASE_URL=http://localhost:1234
+# IRI_PROVIDER_LMSTUDIO_DEFAULT_MODEL=ornith-1.0-35b
 
 # Which provider handles vanilla requests (no iri_agent) and agents that omit `provider`.
 # Optional if exactly one provider is configured; required otherwise.
@@ -1229,7 +1288,6 @@ IRI_DEFAULT_PROVIDER=anthropic
 
 # Optional with defaults
 IRI_PORT=4000
-IRI_DEFAULT_MODEL=claude-sonnet-4-6
 IRI_MAX_AGENT_TURNS=20
 IRI_TOOL_CALL_TIMEOUT_MS=30000
 IRI_MANIFEST_CACHE_TTL_MS=300000
@@ -1250,14 +1308,16 @@ Iriguchi routes each request to a named Anthropic-shaped backend. Configure prov
 ```bash
 IRI_PROVIDER_ANTHROPIC_API_KEY=sk-ant-...
 IRI_PROVIDER_ANTHROPIC_BASE_URL=https://api.anthropic.com
+IRI_PROVIDER_ANTHROPIC_DEFAULT_MODEL=claude-opus-5
 
 IRI_PROVIDER_OPENROUTER_API_KEY=sk-or-...
 IRI_PROVIDER_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1/anthropic
+IRI_PROVIDER_OPENROUTER_DEFAULT_MODEL=moonshotai/kimi-k3
 
 IRI_DEFAULT_PROVIDER=anthropic
 ```
 
-Only providers speaking the Anthropic `/v1/messages` API are supported today (Anthropic direct, OpenRouter's Anthropic endpoint, LM Studio ≥ 0.4.1, Ollama ≥ 0.14.0, Bedrock/Vertex Claude, or any Anthropic-compat proxy). Non-Anthropic-shaped providers (raw OpenAI shape, direct GPT/Gemini access) are out of scope for v1.
+Only providers speaking the Anthropic `/v1/messages` API are supported today (Anthropic direct, OpenRouter's Anthropic endpoint, LM Studio ≥ 0.4.1, Ollama ≥ 0.14.0, Bedrock/Vertex Claude, or any Anthropic-compat proxy) — but any model behind such an endpoint works, not just Claude. Non-Anthropic-shaped providers (raw OpenAI shape) are out of scope for v1.
 
 Agents opt into a non-default provider in their manifest:
 
@@ -1267,14 +1327,14 @@ Agents opt into a non-default provider in their manifest:
     {
       "id": "weather-bot",
       "provider": "openrouter",
-      "default_model": "anthropic/claude-sonnet-4.5",
+      "default_model": "moonshotai/kimi-k3",
       ...
     }
   ]
 }
 ```
 
-Model names are pass-through: write the string your provider expects. Registration rejects manifests that reference unconfigured providers.
+Model names are pass-through: write the string your provider expects. An agent that omits `default_model` inherits its routed provider's `DEFAULT_MODEL`. Registration rejects manifests that reference unconfigured providers.
 ```
 
 - [ ] **Step 3: Update `examples/weather-app/README.md`**
@@ -1307,7 +1367,7 @@ with:
 - [ ] **Step 4: Run the full test suite and typecheck (docs shouldn't move anything, but confirm)**
 
 Run: `bun test`
-Expected: same green count as end of Task 4.
+Expected: same green count as end of Task 5.
 
 Run: `bun run typecheck`
 Expected: clean.
@@ -1344,8 +1404,8 @@ Expected: exit 0, no output.
 
 - [ ] **Step 3: Grep confirms no stale references**
 
-Run: `grep -rn "anthropicApiKey\|anthropicBaseUrl\|ANTHROPIC_API_KEY\|ANTHROPIC_BASE_URL" src tests examples/weather-app 2>/dev/null || true`
-Expected: only matches inside `.env.example` template (if any comment mentions it) and any historical spec/plan doc references. No live code should reference the old names.
+Run: `grep -rn "anthropicApiKey\|anthropicBaseUrl\|ANTHROPIC_API_KEY\|ANTHROPIC_BASE_URL\|IRI_DEFAULT_MODEL\|config.defaultModel" src tests examples/weather-app 2>/dev/null || true`
+Expected: only matches inside `.env.example` template (if any comment mentions it), any historical spec/plan doc references, and the intentional legacy-var guard in `src/config.ts` (the `IRI_DEFAULT_MODEL is no longer supported` error message). No other live code should reference the old names.
 
 - [ ] **Step 4: Manual sanity — startup**
 

@@ -1,6 +1,6 @@
 # Iriguchi — Multi-Provider Configuration Design
 
-**Status:** Draft v1
+**Status:** Draft v2 (amended 2026-07-25: per-provider default models; non-Claude models in scope)
 **Date:** 2026-06-20
 **Owner:** Randal
 
@@ -8,7 +8,9 @@
 
 Iriguchi currently talks to a single Anthropic-shaped backend, wired through the fixed env vars `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL`. This spec introduces a named-provider registry so the gateway can route different agents to different Anthropic-shaped backends concurrently — with OpenRouter's Anthropic-compat endpoint as the first non-direct provider.
 
-Scope is deliberately narrow: providers must speak Anthropic `/v1/messages`. Only Claude-family models (or Anthropic-compat proxies of them) are reachable. Non-Anthropic-shaped access (GPT, Gemini, plain OpenAI shape) is explicitly out of scope and deferred.
+Scope is deliberately narrow on the wire, not on the model: providers must speak Anthropic `/v1/messages`, but any model served through such a surface is reachable — Claude direct, Kimi via OpenRouter's Anthropic endpoint, or local models via LM Studio's Anthropic-compat server. Non-Anthropic-shaped access (plain OpenAI shape) is explicitly out of scope and deferred.
+
+Each provider carries its own required default model, replacing the single global `IRI_DEFAULT_MODEL` — a global default can only name a model that exists on one provider, which makes it a foot-gun the moment a second provider is configured.
 
 ## Goals
 
@@ -16,6 +18,7 @@ Scope is deliberately narrow: providers must speak Anthropic `/v1/messages`. Onl
 - Let each agent manifest declare which provider it uses via an optional `provider` field.
 - Route each chat request to the correct provider without leaking credentials between concurrent requests targeting different providers.
 - Reject manifests at register-time when they reference a provider the gateway isn't configured for.
+- Give each provider a required default model, so agents (and vanilla requests) that don't pin a model always resolve to something the routed provider actually serves.
 - Preserve the current OpenAI-compatible client contract — clients never see providers.
 
 ## Non-goals
@@ -29,54 +32,64 @@ Scope is deliberately narrow: providers must speak Anthropic `/v1/messages`. Onl
 
 ## Design decisions (settled during brainstorming)
 
-1. **OpenRouter scope:** Anthropic-shaped endpoint only. Only Claude-family models.
+1. **Provider scope:** Anthropic-shaped endpoint only — but any model behind such an endpoint, not just Claude-family. *(Amended 2026-07-25: originally "Claude-family only." The real constraint is "behaves well behind an Anthropic-shaped, tool-using agent loop"; Kimi and LM Studio-served local models qualify. Residual risk: the Claude Agent SDK's prompting is Claude-tuned — non-Claude models get a per-provider e2e smoke test rather than a scope exclusion.)*
 2. **Concurrency:** Multiple providers coexist; per-request routing.
 3. **Selection axis:** Agent manifest declares `provider`. Vanilla (no `iri_agent`) requests use the configured default. No client override.
-4. **Model naming:** Raw pass-through. Agent authors write `default_model` in the provider-native form (e.g., `anthropic/claude-sonnet-4.5` for OpenRouter, `claude-sonnet-4-6` for direct Anthropic).
+4. **Model naming:** Raw pass-through. Agent authors write `default_model` in the provider-native form (e.g., `moonshotai/kimi-k3` for OpenRouter, `claude-opus-5` for direct Anthropic).
 5. **Config shape:** Numbered env vars (`IRI_PROVIDER_<NAME>_*`), matching the existing `IRI_*` env-var convention.
+6. **Per-provider default models (2026-07-25):** Every provider requires `IRI_PROVIDER_<NAME>_DEFAULT_MODEL`. The global `IRI_DEFAULT_MODEL` is removed — with per-provider defaults it is a redundant resolution link that can only inject a wrong-provider model name. Reference deployment: `lmstudio` → `ornith-1.0-35b` (default provider), `anthropic` → `claude-opus-5`, `openrouter` → `moonshotai/kimi-k3`.
 
 ## Config surface
 
 `Config` type replaces the single-provider fields with a registry:
 
 ```ts
-type Provider = { name: string; baseUrl: string; apiKey: string };
+type Provider = { name: string; baseUrl: string; apiKey: string; defaultModel: string };
 type Config = {
   providers: Record<string, Provider>;   // keyed by lowercased name
   defaultProvider: string;                // must exist in providers
-  // ...port, defaultModel, maxAgentTurns, toolCallTimeoutMs,
+  // ...port, maxAgentTurns, toolCallTimeoutMs,
   // manifestCacheTtlMs, requestTimeoutMs, dbPath, tmpDir,
   // apiKey, registrationSecret — all unchanged
+  // NOTE: top-level defaultModel is REMOVED (per-provider defaults replace it)
 };
 ```
 
 `loadConfig(env)`:
 
-1. Scan env for keys matching `^IRI_PROVIDER_([A-Z0-9]+)_API_KEY$`. For each match, lowercase the captured name (the registry key) and look up the matching `IRI_PROVIDER_<UPPERCASE_NAME>_BASE_URL`. Names are alphanumeric only — no underscores or hyphens — so the env-var suffix boundaries are unambiguous.
-2. Also scan for `^IRI_PROVIDER_([A-Z0-9]+)_BASE_URL$` to catch base URLs whose corresponding `_API_KEY` is missing (surfaced as a half-configured error rather than silently ignored).
-3. Build `providers[name] = { name, baseUrl, apiKey }`.
+1. Scan env for keys matching `^IRI_PROVIDER_([A-Z0-9]+)_(API_KEY|BASE_URL|DEFAULT_MODEL)$`. For each captured name (lowercased — the registry key), all three suffixes must be present. Names are alphanumeric only — no underscores or hyphens — so the env-var suffix boundaries are unambiguous.
+2. Any suffix scan may discover a provider name; discovery via any one suffix with the others missing is surfaced as a half-configured error rather than silently ignored.
+3. Build `providers[name] = { name, baseUrl, apiKey, defaultModel }`.
 4. Validation, in order:
-   - At least one provider must be configured, else throw `"no providers configured; set IRI_PROVIDER_<NAME>_API_KEY and IRI_PROVIDER_<NAME>_BASE_URL"`.
-   - A `IRI_PROVIDER_<NAME>_API_KEY` without a `IRI_PROVIDER_<NAME>_BASE_URL` (or vice versa) throws `"half-configured provider \"<name>\": missing IRI_PROVIDER_<NAME>_BASE_URL"` (or the API_KEY variant).
+   - At least one provider must be configured, else throw `"no providers configured; set IRI_PROVIDER_<NAME>_API_KEY, IRI_PROVIDER_<NAME>_BASE_URL, and IRI_PROVIDER_<NAME>_DEFAULT_MODEL"`.
+   - A provider missing any of the three vars throws `"half-configured provider \"<name>\": missing IRI_PROVIDER_<NAME>_<SUFFIX>"` naming the first missing suffix.
    - `IRI_DEFAULT_PROVIDER` env var, if set, must name a configured provider, else throw.
    - If `IRI_DEFAULT_PROVIDER` is unset and exactly one provider is configured, use it as the default.
    - If `IRI_DEFAULT_PROVIDER` is unset and more than one provider is configured, throw `"multiple providers configured but IRI_DEFAULT_PROVIDER unset; candidates: [a, b, c]"`.
+   - `IRI_DEFAULT_MODEL`, if present in the env, throws `"IRI_DEFAULT_MODEL is no longer supported; set IRI_PROVIDER_<NAME>_DEFAULT_MODEL per provider"` — fail loud rather than silently ignore a stale config.
 
-Required env vars going forward: `IRI_API_KEY`, `IRI_REGISTRATION_SECRET`, and at least one complete `IRI_PROVIDER_<NAME>_*` pair. `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` are no longer read.
+Required env vars going forward: `IRI_API_KEY`, `IRI_REGISTRATION_SECRET`, and at least one complete `IRI_PROVIDER_<NAME>_*` triple. `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, and `IRI_DEFAULT_MODEL` are no longer read.
 
-Example `.env`:
+Example `.env` (reference deployment):
 
 ```
 IRI_API_KEY=mykey
 IRI_REGISTRATION_SECRET=regsecret
 
+# Local LM Studio (Anthropic-compat surface); API key required non-empty but unused
+IRI_PROVIDER_LMSTUDIO_API_KEY=lm-studio
+IRI_PROVIDER_LMSTUDIO_BASE_URL=http://localhost:1234
+IRI_PROVIDER_LMSTUDIO_DEFAULT_MODEL=ornith-1.0-35b
+
 IRI_PROVIDER_ANTHROPIC_API_KEY=sk-ant-...
 IRI_PROVIDER_ANTHROPIC_BASE_URL=https://api.anthropic.com
+IRI_PROVIDER_ANTHROPIC_DEFAULT_MODEL=claude-opus-5
 
 IRI_PROVIDER_OPENROUTER_API_KEY=sk-or-...
 IRI_PROVIDER_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1/anthropic
+IRI_PROVIDER_OPENROUTER_DEFAULT_MODEL=moonshotai/kimi-k3
 
-IRI_DEFAULT_PROVIDER=anthropic
+IRI_DEFAULT_PROVIDER=lmstudio
 ```
 
 ## Manifest schema change
@@ -102,6 +115,19 @@ if (!provider) throw GatewayError(500, "internal_error", ..., "unknown_provider"
 ```
 
 Vanilla (no `iri_agent`) requests use `config.defaultProvider`. There is no client override.
+
+### Model resolution
+
+The model chain gains the provider default as its last link, replacing `config.defaultModel`:
+
+```
+model = request.model || agent?.default_model || provider.defaultModel
+```
+
+Provider resolution happens first and is independent of the model: `request.model` never influences routing (consistent with "clients never see providers"). Two consequences, accepted:
+
+- A vanilla client sending a model the default provider doesn't serve (e.g. `model: claude-opus-5` routed to `lmstudio`) fails at the provider with an upstream error, not a gateway error. Mitigation: `/v1/models` changes to advertise only the default provider's `defaultModel`, so well-behaved clients that pick from the list stay coherent. (The route currently returns `[config.defaultModel, "claude-opus-4-8", "claude-haiku-4-5"]` — the hardcoded Claude ids are wrong the moment the default provider isn't Anthropic, and are dropped.)
+- An agent that sets `provider` but omits `default_model` inherits the *routed* provider's default — always a model that provider serves. This is the corner the global default got wrong.
 
 ### Credential isolation under concurrency
 
@@ -143,11 +169,15 @@ Startup errors (missing provider config, half-configured provider, unresolvable 
 ## Testing
 
 Unit:
-- `src/config.ts` — single provider, N providers, no providers rejected, default resolves when unique, default required when N>1, unknown default rejected, half-configured provider rejected, name lowercased.
+- `src/config.ts` — single provider, N providers, no providers rejected, default resolves when unique, default required when N>1, unknown default rejected, half-configured provider rejected (each of the three missing suffixes), name lowercased, stale `IRI_DEFAULT_MODEL` rejected with pointer to the per-provider var.
+- `src/routes/openai.ts` — `/v1/models` lists exactly the default provider's `defaultModel`; no hardcoded Claude ids.
 - `src/registry/schema.ts` — agent parses with `provider`, without `provider`, empty-string rejected.
 - `src/routes/registration.ts` — accepts configured provider, accepts omitted provider, rejects unknown provider (400, `unknown_provider`).
 - `src/registry/refresher.ts` — refresh that references a now-unknown provider logs warning and retains prior manifest.
-- `src/agent/runner.ts` — agent's `provider` wins over default; vanilla request uses default; runtime unknown-provider throws 500.
+- `src/agent/runner.ts` — agent's `provider` wins over default; vanilla request uses default; runtime unknown-provider throws 500; model chain falls through `request.model` → `agent.default_model` → routed provider's `defaultModel` (in particular: agent with `provider` set but no `default_model` gets that provider's default, not another provider's).
+
+E2E (per-provider smoke):
+- One gated smoke per configured provider class (direct Anthropic, OpenRouter/Kimi, LM Studio/local) exercising a tool-calling turn — this is the check that replaced the old "Claude-family only" scope exclusion.
 
 Integration:
 - Existing chat integration tests updated to use new env vars via `tests/setup.ts`.
@@ -157,7 +187,7 @@ E2E:
 - `tests/e2e/full-flow.test.ts` — swap env-var names, no logical change.
 
 Test setup:
-- `tests/setup.ts` provides `IRI_PROVIDER_ANTHROPIC_API_KEY`, `IRI_PROVIDER_ANTHROPIC_BASE_URL`, `IRI_DEFAULT_PROVIDER=anthropic` as defaults for the whole suite.
+- `tests/setup.ts` provides `IRI_PROVIDER_ANTHROPIC_API_KEY`, `IRI_PROVIDER_ANTHROPIC_BASE_URL`, `IRI_PROVIDER_ANTHROPIC_DEFAULT_MODEL`, `IRI_DEFAULT_PROVIDER=anthropic` as defaults for the whole suite.
 
 ## Docs
 
