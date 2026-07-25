@@ -1,6 +1,7 @@
 import { fetchManifest, ManifestFetchError } from "./manifest.ts";
 import type { Store } from "./store.ts";
 import type { Logger } from "../logger.ts";
+import type { Config } from "../config.ts";
 
 export type RefresherHandle = { stop(): void };
 
@@ -9,6 +10,7 @@ export function startBackgroundRefresh(opts: {
   logger: Logger;
   ttlMs: number;
   intervalMs: number;
+  config: Pick<Config, "providers">;
 }): RefresherHandle {
   const tick = async () => {
     const now = Date.now();
@@ -20,6 +22,18 @@ export function startBackgroundRefresh(opts: {
           baseUrl: app.base_url,
           appToken: app.app_token,
         });
+        const bad = manifest.agents.find(
+          (a) => a.provider && !opts.config.providers[a.provider],
+        );
+        if (bad) {
+          opts.logger.warn("manifest.refresh_failed", {
+            app_id: app.id,
+            agent_id: bad.id,
+            reason: "unknown_provider",
+            provider: bad.provider,
+          });
+          continue;
+        }
         opts.store.upsertApp({
           id: app.id,
           base_url: app.base_url,

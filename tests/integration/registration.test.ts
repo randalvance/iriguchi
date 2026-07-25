@@ -74,6 +74,35 @@ describe("POST /apps/register", () => {
     expect(store.getApp("weather-app")?.app_token).toBe(body.app_token);
   });
 
+  it("rejects a manifest whose agent references an unconfigured provider", async () => {
+    manifestResponse = {
+      manifest_version: "1",
+      app: { id: "bad-app", name: "b", description: "b" },
+      agents: [
+        {
+          id: "bad-bot",
+          name: "Bad",
+          description: "d",
+          system_prompt: "x",
+          provider: "openrouter",
+          tools: [],
+          skills: [],
+        },
+      ],
+    };
+    const app = buildApp({ config: cfg(), store });
+    const res = await app.fetch(new Request("http://x/apps/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer reg-secret" },
+      body: JSON.stringify({ id: "bad-app", base_url: baseUrl }),
+    }));
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.error.code).toBe("unknown_provider");
+    expect(body.error.message).toMatch(/bad-bot.*openrouter.*anthropic/);
+    expect(store.getApp("bad-app")).toBeNull();
+  });
+
   it("502 when manifest fetch fails", async () => {
     const app = buildApp({ config: cfg(), store });
     const res = await app.fetch(new Request("http://x/apps/register", {

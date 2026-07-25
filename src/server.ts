@@ -36,6 +36,7 @@ if (import.meta.main) {
     logger,
     ttlMs: config.manifestCacheTtlMs,
     intervalMs: 30000,
+    config,
   });
   logger.info("server.start", { port: config.port });
 }
