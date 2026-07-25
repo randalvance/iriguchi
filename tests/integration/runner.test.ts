@@ -145,3 +145,50 @@ describe("runAgentStream — app-owned agent with tool call", () => {
     }
   });
 });
+
+describe("runAgentStream — agent.provider resolution", () => {
+  it("routes to agent.provider's baseUrl when set, ignoring defaultProvider", async () => {
+    const fakeDefault = spinUpFakeAnthropic({ turns: [{ kind: "text", text: "WRONG_PROVIDER" }] });
+    const fakeAlt = spinUpFakeAnthropic({ turns: [{ kind: "text", text: "OK_ALT" }] });
+    try {
+      store.upsertApp({
+        id: "alt-app",
+        base_url: "http://unused",
+        app_token: "app-tok",
+        manifest: {
+          manifest_version: "1",
+          app: { id: "alt-app", name: "a", description: "a" },
+          agents: [
+            {
+              id: "alt-bot",
+              name: "Alt",
+              description: "d",
+              system_prompt: "you are alt",
+              provider: "alt",
+              tools: [],
+              skills: [],
+            } as any,
+          ],
+        },
+      });
+      const stream = runAgentStream({
+        config: {
+          ...baseConfig(),
+          providers: {
+            anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fakeDefault.port}` },
+            alt: { name: "alt", apiKey: "ak-alt", baseUrl: `http://localhost:${fakeAlt.port}` },
+          },
+          defaultProvider: "anthropic",
+        },
+        store,
+        request: { requestId: "01H", agentId: "alt-bot", model: null, messages: [{ role: "user", content: "hi" }], showToolCalls: false },
+      });
+      const out = await collect(stream);
+      expect(out).toContain("OK_ALT");
+      expect(out).not.toContain("WRONG_PROVIDER");
+    } finally {
+      fakeDefault.stop();
+      fakeAlt.stop();
+    }
+  });
+});

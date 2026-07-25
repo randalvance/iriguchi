@@ -119,7 +119,7 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
       ? createSdkMcpServer({ name: "iriguchi-app-tools", version: "1.0.0", tools: mcpTools })
       : undefined;
 
-  const providerName = config.defaultProvider;
+  const providerName = agent?.provider ?? config.defaultProvider;
   const provider = config.providers[providerName];
   if (!provider) {
     throw new GatewayError(

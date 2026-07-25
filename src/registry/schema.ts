@@ -58,6 +58,7 @@ const AgentSchema = z.object({
   description: z.string().min(1),
   system_prompt: z.string().min(1),
   default_model: z.string().optional(),
+  provider: z.string().min(1).optional(),
   tools: z.array(ToolSchema).default([]),
   skills: z.array(SkillSchema).default([]),
 });

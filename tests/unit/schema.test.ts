@@ -125,4 +125,24 @@ describe("ManifestSchema", () => {
     (m.agents[0] as any).id = "weather-bot-";
     expect(() => ManifestSchema.parse(m)).toThrow();
   });
+
+  it("accepts an agent with an optional provider field", () => {
+    const m = structuredClone(VALID_MANIFEST);
+    (m.agents[0] as any).provider = "openrouter";
+    const parsed = ManifestSchema.parse(m);
+    expect(parsed.agents[0].provider).toBe("openrouter");
+  });
+
+  it("accepts an agent without a provider field (backward-shape-compatible for manifests)", () => {
+    const m = structuredClone(VALID_MANIFEST);
+    delete (m.agents[0] as any).provider;
+    const parsed = ManifestSchema.parse(m);
+    expect(parsed.agents[0].provider).toBeUndefined();
+  });
+
+  it("rejects an agent with empty-string provider", () => {
+    const m = structuredClone(VALID_MANIFEST);
+    (m.agents[0] as any).provider = "";
+    expect(() => ManifestSchema.parse(m)).toThrow();
+  });
 });
