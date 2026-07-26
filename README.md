@@ -8,19 +8,29 @@ Iriguchi (Japanese: "entrance / gateway") is an AI gateway: a single OpenAI-comp
 
 ## Quickstart
 
-1. Copy `.env.example` to `.env` and fill in `IRI_API_KEY`, `IRI_REGISTRATION_SECRET`, and at least one provider triple (`IRI_PROVIDER_<NAME>_API_KEY` / `_BASE_URL` / `_DEFAULT_MODEL`).
+0. Install [Bun](https://bun.sh) if you don't have it (or use the repo's devcontainer):
+   ```bash
+   curl -fsSL https://bun.sh/install | bash
+   ```
+1. Copy `.env.example` to `.env` and fill in `IRI_API_KEY`, `IRI_REGISTRATION_SECRET`, and at least one provider triple (`IRI_PROVIDER_<NAME>_API_KEY` / `_BASE_URL` / `_DEFAULT_MODEL`). For a local LM Studio provider, start LM Studio's server (default port 1234) and use the model id it reports at `/v1/models`.
 2. Start the gateway:
    ```bash
    bun install
    bun run dev
    ```
-3. (Optional) Start the demo weather app in another terminal:
+   It listens on `IRI_PORT` (default 4000).
+3. Verify it's up:
+   ```bash
+   curl http://localhost:4000/healthz
+   curl -H "Authorization: Bearer $IRI_API_KEY" http://localhost:4000/v1/models
+   ```
+4. (Optional) Start the demo weather app in another terminal:
    ```bash
    cd examples/weather-app
    bun install
    IRI_REGISTRATION_SECRET=$(grep IRI_REGISTRATION_SECRET ../../.env | cut -d= -f2) bun run dev
    ```
-4. Open <http://localhost:4001> and ask "What's the weather in NYC?"
+5. Open <http://localhost:4001> and ask "What's the weather in NYC?"
 
 ## Providers
 
