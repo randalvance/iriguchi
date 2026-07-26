@@ -80,6 +80,12 @@ curl http://localhost:4000/v1/chat/completions \
   }'
 ```
 
+`stream` selects the response shape, per the OpenAI protocol: `stream: true` returns an SSE stream of `chat.completion.chunk` events ending in `data: [DONE]`; `stream: false` — **or an omitted `stream`** — returns a single `chat.completion` JSON object. A non-boolean `stream` is a `400`.
+
+> **Breaking (unreleased):** the gateway previously streamed regardless of `stream`. Clients that omitted `stream` and read SSE must now send `stream: true` explicitly.
+
+See [streaming vs non-streaming](docs/app-integration.md#streaming-vs-non-streaming) for the non-streaming response shape.
+
 ## App-aware usage
 
 To register your own app and expose agents (manifest shape, registration flow, tool-call contract), see the **[app integration guide](docs/app-integration.md)**.

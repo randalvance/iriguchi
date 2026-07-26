@@ -4,7 +4,8 @@ import { bearerAuth } from "../auth.ts";
 import type { Config } from "../config.ts";
 import type { Store } from "../registry/store.ts";
 import type { Logger } from "../logger.ts";
-import { runAgentStream, GatewayError } from "../agent/runner.ts";
+import { runAgentStream, runAgentChunks, GatewayError } from "../agent/runner.ts";
+import { aggregateChunks, type OpenAIChunk } from "../agent/openai-sse.ts";
 
 export function openaiRoutes(deps: { config: Config; store: Store; logger: Logger }) {
   const app = new Hono();
@@ -54,26 +55,58 @@ export function openaiRoutes(deps: { config: Config; store: Store; logger: Logge
         400,
       );
     }
+    // OpenAI's default is non-streaming; a client that omits `stream` and
+    // calls response.json() must get JSON, not SSE.
+    if (body.stream !== undefined && typeof body.stream !== "boolean") {
+      return c.json(
+        {
+          error: {
+            type: "invalid_request_error",
+            message: "stream must be a boolean when present",
+          },
+        },
+        400,
+      );
+    }
+    const wantsStream = body.stream === true;
     const showToolCalls = c.req.query("iri_show_tool_calls") === "true";
     logger.info("request.start", {
       method: "POST",
       path: "/v1/chat/completions",
       iri_agent: body.iri_agent ?? null,
       model: body.model ?? null,
+      stream: wantsStream,
     });
 
+    const runnerOpts = {
+      config: deps.config,
+      store: deps.store,
+      request: {
+        requestId,
+        agentId: typeof body.iri_agent === "string" ? body.iri_agent : null,
+        model: typeof body.model === "string" ? body.model : null,
+        messages: body.messages,
+        showToolCalls,
+      },
+    };
+
     try {
-      const stream = runAgentStream({
-        config: deps.config,
-        store: deps.store,
-        request: {
-          requestId,
-          agentId: typeof body.iri_agent === "string" ? body.iri_agent : null,
-          model: typeof body.model === "string" ? body.model : null,
-          messages: body.messages,
-          showToolCalls,
-        },
-      });
+      if (!wantsStream) {
+        // Nothing is committed to the wire until the run finishes, so any
+        // error — including one raised mid-run — can still become a status
+        // code via the catch below.
+        const start = Date.now();
+        const chunks: OpenAIChunk[] = [];
+        for await (const chunk of runAgentChunks(runnerOpts)) {
+          chunks.push(chunk);
+        }
+        const completion = aggregateChunks(chunks);
+        logger.info("request.complete", { duration_ms: Date.now() - start, stream: false });
+        c.header("X-Request-Id", requestId);
+        return c.json(completion);
+      }
+
+      const stream = runAgentStream(runnerOpts);
 
       // Eager-probe the first chunk so GatewayError becomes an HTTP status
       // before we've committed to streaming.

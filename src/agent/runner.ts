@@ -12,6 +12,7 @@ import {
   createTranslateContext,
   DONE_SENTINEL,
   type SdkEvent,
+  type OpenAIChunk,
 } from "./openai-sse.ts";
 
 const GENERIC_SYSTEM_PROMPT = "You are a helpful general-purpose assistant.";
@@ -44,11 +45,30 @@ export type RunnerOpts = {
   request: ChatRequest;
 };
 
-export function runAgentStream(opts: RunnerOpts): AsyncIterable<string> {
+/**
+ * The run as structured OpenAI chunks. Callers that want SSE use
+ * {@link runAgentStream}; callers building a non-streaming `chat.completion`
+ * aggregate these directly rather than re-parsing the wire format.
+ *
+ * Like `runAgentStream`, resolution errors (unknown agent, unknown provider)
+ * surface as a `GatewayError` thrown from the first `next()`, not at call time.
+ */
+export function runAgentChunks(opts: RunnerOpts): AsyncIterable<OpenAIChunk> {
   return { [Symbol.asyncIterator]() { return generate(opts); } };
 }
 
-async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
+export function runAgentStream(opts: RunnerOpts): AsyncIterable<string> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for await (const chunk of runAgentChunks(opts)) {
+        yield formatSseChunk(chunk);
+      }
+      yield DONE_SENTINEL;
+    },
+  };
+}
+
+async function* generate(opts: RunnerOpts): AsyncGenerator<OpenAIChunk> {
   const { config, store, request } = opts;
   let lookup: AgentLookup | null = null;
   if (request.agentId) {
@@ -132,7 +152,7 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
       : undefined;
 
   for (const c of translateSdkEvent({ type: "stream_start" }, tCtx)) {
-    yield formatSseChunk(c);
+    yield c;
   }
 
   const prompt = buildPrompt(request.messages);
@@ -159,13 +179,12 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
   const sdkStream = query({ prompt, options: sdkOptions as any });
   for await (const evt of adaptSdkStream(sdkStream)) {
     for (const c of translateSdkEvent(evt, tCtx)) {
-      yield formatSseChunk(c);
+      yield c;
     }
   }
   for (const c of translateSdkEvent({ type: "done", reason: "stop" }, tCtx)) {
-    yield formatSseChunk(c);
+    yield c;
   }
-  yield DONE_SENTINEL;
 }
 
 function buildPrompt(messages: ChatRequest["messages"]): string {

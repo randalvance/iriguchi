@@ -53,6 +53,30 @@ describe("fetchManifest", () => {
     }
   });
 
+  it("carries the upstream status on a refused fetch", async () => {
+    for (const status of [401, 403, 500]) {
+      const server = spinUpMockApp(() => new Response("no", { status }));
+      try {
+        const err = await fetchManifest({
+          baseUrl: `http://localhost:${server.port}`,
+          appToken: "t",
+        }).catch((e) => e);
+        expect(err).toBeInstanceOf(ManifestFetchError);
+        expect((err as ManifestFetchError).status).toBe(status);
+      } finally {
+        server.stop();
+      }
+    }
+  });
+
+  it("leaves status unset for transport-level failures", async () => {
+    const err = await fetchManifest({ baseUrl: "http://localhost:1", appToken: "t" }).catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(ManifestFetchError);
+    expect((err as ManifestFetchError).status).toBeUndefined();
+  });
+
   it("throws ManifestFetchError on invalid manifest", async () => {
     const server = spinUpMockApp(() => Response.json({ manifest_version: "999" }));
     try {

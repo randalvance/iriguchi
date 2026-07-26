@@ -1,12 +1,21 @@
 import { ManifestSchema, type Manifest } from "./schema.ts";
 
 export class ManifestFetchError extends Error {
+  /**
+   * Upstream HTTP status, when the app answered but refused. Absent for
+   * transport-level failures (network error, timeout) and for well-formed
+   * 2xx responses that failed JSON parsing or schema validation.
+   */
+  public readonly status?: number;
+
   constructor(
     message: string,
     public readonly cause?: unknown,
+    status?: number,
   ) {
     super(message);
     this.name = "ManifestFetchError";
+    this.status = status;
   }
 }
 
@@ -37,7 +46,7 @@ export async function fetchManifest(opts: {
     clearTimeout(timeout);
   }
   if (!res.ok) {
-    throw new ManifestFetchError(`HTTP ${res.status} from ${url}`);
+    throw new ManifestFetchError(`HTTP ${res.status} from ${url}`, undefined, res.status);
   }
   let body: unknown;
   try {
