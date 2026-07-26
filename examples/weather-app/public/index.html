@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Weather Bot — Iriguchi demo</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+      #log { border: 1px solid #ccc; padding: 1rem; height: 60vh; overflow-y: auto; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 14px; }
+      .me { color: #036; }
+      .bot { color: #060; }
+      form { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+      input[type=text] { flex: 1; padding: 0.5rem; }
+      button { padding: 0.5rem 1rem; }
+      label { display: block; margin: 0.5rem 0; font-size: 0.85rem; color: #444; }
+    </style>
+  </head>
+  <body>
+    <h1>Weather Bot</h1>
+    <p>Demo chat backed by Iriguchi + Claude Sonnet via the <code>weather-bot</code> agent.</p>
+    <label>Gateway URL <input id="gw" type="text" value="http://localhost:4000" style="width: 18rem" /></label>
+    <label>API key <input id="key" type="text" value="" placeholder="IRI_API_KEY" style="width: 18rem" /></label>
+    <div id="log"></div>
+    <form id="f">
+      <input id="msg" type="text" placeholder="What's the weather in NYC?" autocomplete="off" />
+      <button type="submit">Send</button>
+    </form>
+    <script>
+      const log = document.getElementById("log");
+      const history = [];
+      function append(role, text) {
+        const div = document.createElement("div");
+        div.className = role === "user" ? "me" : "bot";
+        div.textContent = `${role}: ${text}`;
+        log.appendChild(div);
+        log.scrollTop = log.scrollHeight;
+      }
+      document.getElementById("f").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const gw = document.getElementById("gw").value.trim();
+        const key = document.getElementById("key").value.trim();
+        const text = document.getElementById("msg").value.trim();
+        if (!text) return;
+        history.push({ role: "user", content: text });
+        append("user", text);
+        document.getElementById("msg").value = "";
+        const res = await fetch(`${gw}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            iri_agent: "weather-bot",
+            messages: history,
+            stream: true,
+          }),
+        });
+        if (!res.ok) {
+          append("error", `${res.status}: ${await res.text()}`);
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let assistantText = "";
+        const div = document.createElement("div");
+        div.className = "bot";
+        div.textContent = "assistant: ";
+        log.appendChild(div);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6);
+            if (data === "[DONE]") continue;
+            try {
+              const obj = JSON.parse(data);
+              const delta = obj.choices?.[0]?.delta?.content;
+              if (delta) {
+                assistantText += delta;
+                div.textContent = `assistant: ${assistantText}`;
+                log.scrollTop = log.scrollHeight;
+              }
+            } catch {}
+          }
+        }
+        history.push({ role: "assistant", content: assistantText });
+      });
+    </script>
+  </body>
+</html>

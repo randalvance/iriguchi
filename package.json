@@ -1,0 +1,24 @@
+{
+  "name": "iriguchi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "module": "src/server.ts",
+  "scripts": {
+    "dev": "bun --hot src/server.ts",
+    "start": "bun src/server.ts",
+    "test": "bun test --timeout 30000",
+    "test:e2e": "IRI_E2E=1 bun test tests/e2e --timeout 120000",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest",
+    "hono": "^4.0.0",
+    "ulid": "^2.3.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.4.0"
+  }
+}

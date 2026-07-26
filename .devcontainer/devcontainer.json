@@ -1,29 +1,29 @@
 {
-  "name": "iriguchi",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "context": "..",
-    "args": {
-      "NODE_MAJOR": "24",
-      "PYTHON_VERSION": "3.14.0",
-      "USERNAME": "vscode",
-      "USER_UID": "1000",
-      "USER_GID": "1000"
-    }
+  "name": "Iriguchi",
+  "image": "oven/bun:1",
+  "remoteUser": "bun",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
   },
   "workspaceFolder": "/workspaces/iriguchi",
-  "remoteUser": "vscode",
+  "forwardPorts": [4000, 4001],
+  "portsAttributes": {
+    "4000": { "label": "iriguchi gateway", "onAutoForward": "notify" },
+    "4001": { "label": "weather-app demo", "onAutoForward": "silent" }
+  },
+  "postCreateCommand": "bun install && cd examples/weather-app && bun install",
   "customizations": {
     "vscode": {
       "extensions": [
-        "ms-python.python",
+        "oven.bun-vscode",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "/usr/local/bin/python3"
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "typescript.tsdk": "node_modules/typescript/lib"
       }
     }
-  },
-  "postCreateCommand": "node --version && npm --version && python3 --version && claude --version"
+  }
 }
