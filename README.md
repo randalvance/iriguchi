@@ -82,6 +82,8 @@ curl http://localhost:4000/v1/chat/completions \
 
 ## App-aware usage
 
+To register your own app and expose agents (manifest shape, registration flow, tool-call contract), see the **[app integration guide](docs/app-integration.md)**.
+
 ```bash
 curl http://localhost:4000/v1/chat/completions \
   -H "Authorization: Bearer $IRI_API_KEY" \
