@@ -2,6 +2,9 @@
   "name": "Iriguchi",
   "image": "oven/bun:1",
   "remoteUser": "bun",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
   "workspaceFolder": "/workspaces/iriguchi",
   "forwardPorts": [4000, 4001],
   "portsAttributes": {
