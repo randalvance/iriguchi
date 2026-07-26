@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import type { Config } from "./config.ts";
 import { loadConfig } from "./config.ts";
 import { createLogger, type Logger } from "./logger.ts";
@@ -19,6 +20,9 @@ export function buildApp(deps: AppDeps) {
   const app = new Hono();
 
   app.get("/healthz", (c) => c.json({ status: "ok" }));
+  // Browser clients (e.g. the demo chat UI) call /v1 cross-origin with an
+  // Authorization header, so the preflight must be answered before auth.
+  app.use("/v1/*", cors());
   app.route("/v1", openaiRoutes({ config: deps.config, store, logger }));
   app.route("/apps", registrationRoutes({ config: deps.config, store, logger }));
 
@@ -30,7 +34,13 @@ if (import.meta.main) {
   const logger = createLogger();
   const store = createStore({ dbPath: config.dbPath });
   const app = buildApp({ config, store, logger });
-  Bun.serve({ port: config.port, fetch: app.fetch });
+  Bun.serve({
+    port: config.port,
+    fetch: app.fetch,
+    // Bun's default idleTimeout (10s) kills SSE connections while slow
+    // providers are still evaluating the prompt. Bun caps this at 255s.
+    idleTimeout: Math.min(255, Math.ceil(config.requestTimeoutMs / 1000)),
+  });
   startBackgroundRefresh({
     store,
     logger,

@@ -149,7 +149,12 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
       ANTHROPIC_BASE_URL: provider.baseUrl,
     },
   };
-  if (mcpServer) sdkOptions.mcpServers = { app: mcpServer };
+  if (mcpServer) {
+    sdkOptions.mcpServers = { app: mcpServer };
+    // App tools are gateway-owned; grant them explicitly or the CLI's
+    // permission model denies every mcp__app__* call in headless mode.
+    sdkOptions.allowedTools = (agent?.tools ?? []).map((t) => `mcp__app__${t.name}`);
+  }
 
   const sdkStream = query({ prompt, options: sdkOptions as any });
   for await (const evt of adaptSdkStream(sdkStream)) {
