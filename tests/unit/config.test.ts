@@ -27,6 +27,7 @@ describe("loadConfig", () => {
         apiKey: "ak-anthropic",
         baseUrl: "https://api.anthropic.com",
         defaultModel: "claude-opus-5",
+        authStyle: "api_key",
       },
     });
     expect(cfg.defaultProvider).toBe("anthropic");
@@ -47,8 +48,52 @@ describe("loadConfig", () => {
       apiKey: "sk-or",
       baseUrl: "https://openrouter.ai/api/v1/anthropic",
       defaultModel: "moonshotai/kimi-k3",
+      authStyle: "api_key",
     });
     expect(cfg.defaultProvider).toBe("openrouter");
+  });
+
+  it("defaults authStyle to api_key when AUTH_STYLE is unset", () => {
+    const cfg = loadConfig(baseEnv());
+    expect(cfg.providers.anthropic.authStyle).toBe("api_key");
+  });
+
+  it("parses an explicit auth_token style", () => {
+    const cfg = loadConfig({
+      ...baseEnv(),
+      IRI_PROVIDER_OPENROUTER_API_KEY: "sk-or",
+      IRI_PROVIDER_OPENROUTER_BASE_URL: "https://openrouter.ai/api",
+      IRI_PROVIDER_OPENROUTER_DEFAULT_MODEL: "moonshotai/kimi-k3",
+      IRI_PROVIDER_OPENROUTER_AUTH_STYLE: "auth_token",
+      IRI_DEFAULT_PROVIDER: "openrouter",
+    });
+    expect(cfg.providers.openrouter.authStyle).toBe("auth_token");
+  });
+
+  it("resolves auth styles per provider", () => {
+    const cfg = loadConfig({
+      ...baseEnv(),
+      IRI_PROVIDER_OPENROUTER_API_KEY: "sk-or",
+      IRI_PROVIDER_OPENROUTER_BASE_URL: "https://openrouter.ai/api",
+      IRI_PROVIDER_OPENROUTER_DEFAULT_MODEL: "moonshotai/kimi-k3",
+      IRI_PROVIDER_OPENROUTER_AUTH_STYLE: "auth_token",
+      IRI_DEFAULT_PROVIDER: "openrouter",
+    });
+    expect(cfg.providers.openrouter.authStyle).toBe("auth_token");
+    expect(cfg.providers.anthropic.authStyle).toBe("api_key");
+  });
+
+  it("throws on an unrecognized auth style, naming the provider and the choices", () => {
+    expect(() =>
+      loadConfig({ ...baseEnv(), IRI_PROVIDER_ANTHROPIC_AUTH_STYLE: "bearer" }),
+    ).toThrow(/anthropic.*bearer.*api_key.*auth_token/is);
+  });
+
+  it("does not let AUTH_STYLE alone define a provider", () => {
+    // A name seen only via AUTH_STYLE is still half-configured, not a provider.
+    expect(() =>
+      loadConfig({ ...baseEnv(), IRI_PROVIDER_OPENROUTER_AUTH_STYLE: "auth_token" }),
+    ).toThrow(/half-configured provider "openrouter".*API_KEY/i);
   });
 
   it("lowercases provider names from env-var keys", () => {

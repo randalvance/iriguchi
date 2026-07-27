@@ -85,6 +85,9 @@ Validated against a strict schema (`src/registry/schema.ts`); the whole manifest
 Notes on models and providers:
 - `default_model` is passed through verbatim — write it in the form the agent's provider expects (`claude-opus-5` for Anthropic direct, `moonshotai/kimi-k3` for OpenRouter's Anthropic endpoint, a local id like `ornith-1.0-35b` for LM Studio).
 - If you set `provider` but omit `default_model`, the agent inherits that provider's configured default model — always a model the provider actually serves.
+- `provider` is how one agent runs somewhere different from everything else. An agent that needs reliable tool calling can name a hosted provider while the gateway's default stays local — useful because tool support varies sharply by model and runtime, and a model that cannot accept tool definitions fails the whole run, not just the tool call.
+- The name must be configured on the gateway. If it is not, registration fails with `400 unknown_provider` listing the configured names, so a typo surfaces at registration rather than on the first chat request.
+- Hosted providers are billed per token. Naming one here opts that agent — and only that agent — into that cost.
 
 ## Step 2 — Register at startup
 

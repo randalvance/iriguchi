@@ -1,6 +1,6 @@
 import { ulid } from "ulid";
 import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import type { Config } from "../config.ts";
+import type { Config, Provider } from "../config.ts";
 import type { Store, AgentLookup } from "../registry/store.ts";
 import type { Tool, Agent } from "../registry/schema.ts";
 import { materializeSkills } from "./skills.ts";
@@ -35,6 +35,31 @@ export type ChatRequest = {
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   showToolCalls: boolean;
 };
+
+/**
+ * The credential variables handed to the agent runtime for a given provider.
+ *
+ * `auth_token` providers — OpenRouter's Anthropic surface, for one — carry the
+ * key in `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_API_KEY` must be present but
+ * empty. Omitting it is NOT equivalent and is not a tidy-up opportunity: with
+ * no value at all the SDK falls back to authenticating against Anthropic
+ * directly, silently bypassing the configured provider and billing elsewhere.
+ * Returning it explicitly also means it overwrites any ambient
+ * `ANTHROPIC_API_KEY` when spread over `process.env`.
+ */
+export function providerCredentialEnv(provider: Provider): Record<string, string> {
+  if (provider.authStyle === "auth_token") {
+    return {
+      ANTHROPIC_AUTH_TOKEN: provider.apiKey,
+      ANTHROPIC_API_KEY: "",
+      ANTHROPIC_BASE_URL: provider.baseUrl,
+    };
+  }
+  return {
+    ANTHROPIC_API_KEY: provider.apiKey,
+    ANTHROPIC_BASE_URL: provider.baseUrl,
+  };
+}
 
 export type RunnerOpts = {
   config: Pick<
@@ -165,8 +190,7 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<OpenAIChunk> {
     skills: "all" as const,
     env: {
       ...process.env,
-      ANTHROPIC_API_KEY: provider.apiKey,
-      ANTHROPIC_BASE_URL: provider.baseUrl,
+      ...providerCredentialEnv(provider),
     },
   };
   if (mcpServer) {

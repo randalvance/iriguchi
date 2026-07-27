@@ -28,8 +28,8 @@ const baseCfg = () => ({
   dbPath: ":memory:",
   tmpDir: tmp,
   providers: {
-    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6" },
-  } as Record<string, { name: string; apiKey: string; baseUrl: string; defaultModel: string }>,
+    anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6", authStyle: "api_key" as const },
+  } as Record<string, { name: string; apiKey: string; baseUrl: string; defaultModel: string; authStyle: "api_key" }>,
   defaultProvider: "anthropic",
   apiKey: "client-key",
   registrationSecret: "reg",
@@ -66,7 +66,7 @@ describe("POST /v1/chat/completions", () => {
       const cfg = {
         ...baseCfg(),
         providers: {
-          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
+          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6", authStyle: "api_key" as const },
         },
       };
       const app = buildApp({ config: cfg, store });
@@ -97,7 +97,7 @@ describe("POST /v1/chat/completions", () => {
       const cfg = {
         ...baseCfg(),
         providers: {
-          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
+          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6", authStyle: "api_key" as const },
         },
       };
       const app = buildApp({ config: cfg, store });
@@ -127,7 +127,7 @@ describe("POST /v1/chat/completions", () => {
       const cfg = {
         ...baseCfg(),
         providers: {
-          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
+          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6", authStyle: "api_key" as const },
         },
       };
       const app = buildApp({ config: cfg, store });
@@ -189,6 +189,7 @@ describe("POST /v1/chat/completions — non-streaming", () => {
           apiKey: "ak",
           baseUrl: `http://localhost:${fakePort}`,
           defaultModel: "claude-sonnet-4-6",
+          authStyle: "api_key" as const,
         },
       },
     };

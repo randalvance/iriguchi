@@ -42,13 +42,29 @@ IRI_PROVIDER_ANTHROPIC_BASE_URL=https://api.anthropic.com
 IRI_PROVIDER_ANTHROPIC_DEFAULT_MODEL=claude-opus-5
 
 IRI_PROVIDER_OPENROUTER_API_KEY=sk-or-...
-IRI_PROVIDER_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1/anthropic
+IRI_PROVIDER_OPENROUTER_BASE_URL=https://openrouter.ai/api
 IRI_PROVIDER_OPENROUTER_DEFAULT_MODEL=moonshotai/kimi-k3
+IRI_PROVIDER_OPENROUTER_AUTH_STYLE=auth_token
 
 IRI_DEFAULT_PROVIDER=anthropic
 ```
 
 Only providers speaking the Anthropic `/v1/messages` API are supported today (Anthropic direct, OpenRouter's Anthropic endpoint, LM Studio ≥ 0.4.1, Ollama ≥ 0.14.0, Bedrock/Vertex Claude, or any Anthropic-compat proxy) — but any model behind such an endpoint works, not just Claude. Non-Anthropic-shaped providers (raw OpenAI shape) are out of scope for v1.
+
+### Credential style
+
+`IRI_PROVIDER_<NAME>_AUTH_STYLE` is optional and defaults to `api_key`, which sends the credential as `ANTHROPIC_API_KEY`. Anthropic-compatible gateways that authenticate by bearer token need `auth_token`, which sends it as `ANTHROPIC_AUTH_TOKEN` **and** sets `ANTHROPIC_API_KEY` to an empty string.
+
+The empty value is deliberate and must not be "cleaned up". If `ANTHROPIC_API_KEY` is absent rather than empty, the runtime falls back to authenticating against Anthropic directly — the request succeeds against the wrong endpoint on the wrong account, which is far harder to notice than a failure.
+
+### OpenRouter
+
+OpenRouter serves an Anthropic-compatible surface, so no translation layer is involved. Two details cost time if you get them wrong:
+
+- The base URL is the bare `https://openrouter.ai/api` root; the client appends `/v1/messages`.
+- Model names are OpenRouter slugs. It is `moonshotai/kimi-k3` — `moonshot/kimi-k3` is a 404, and it is the most common first-call mistake.
+
+OpenRouter is **billed per token**, unlike a local LM Studio or Ollama provider. Keep a local provider as `IRI_DEFAULT_PROVIDER` and let individual agents opt in via `provider` in their manifest: per-agent selection is the cost boundary, since vanilla requests and every agent that omits `provider` go to the default.
 
 Agents opt into a non-default provider in their manifest:
 

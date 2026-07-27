@@ -27,6 +27,7 @@ describe("example app handshake", () => {
           apiKey: "unused",
           baseUrl: "http://localhost:1",
           defaultModel: "claude-sonnet-4-6",
+          authStyle: "api_key" as const,
         },
       },
       defaultProvider: "anthropic",

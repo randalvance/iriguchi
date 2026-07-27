@@ -16,9 +16,24 @@ export type Scripted = {
   responses?: Array<ScriptedTurn[]>;
   /** Shorthand: all turns returned in a single API response. */
   turns?: ScriptedTurn[];
+  /**
+   * Content-aware scripting. Given the inbound request body, return the turns
+   * to emit. Prefer this over `responses` when the assertion depends on the
+   * agent loop's real call sequence: the SDK issues a preliminary tool-less
+   * call before the agent turn, so index-based scripting silently misaligns
+   * and can make a tool test pass without the tool ever being invoked.
+   */
+  respond?: (body: any) => ScriptedTurn[];
 };
 
-export function spinUpFakeAnthropic(script: Scripted) {
+export type ObservedRequest = { headers: Headers; body: any };
+
+export type FakeAnthropicOpts = {
+  /** Called with the headers and parsed body of every /v1/messages request. */
+  onRequest?: (request: ObservedRequest) => void;
+};
+
+export function spinUpFakeAnthropic(script: Scripted, opts: FakeAnthropicOpts = {}) {
   // Normalise to an array-of-responses.
   const responses: ScriptedTurn[][] = script.responses
     ? script.responses
@@ -27,9 +42,19 @@ export function spinUpFakeAnthropic(script: Scripted) {
   let callCount = 0;
   const app = new Hono();
   app.post("/v1/messages", async (_c) => {
-    const idx = callCount < responses.length ? callCount : responses.length - 1;
+    if (opts.onRequest) {
+      const body = await _c.req.raw.clone().json().catch(() => null);
+      opts.onRequest({ headers: _c.req.raw.headers, body });
+    }
+    let turns: ScriptedTurn[];
+    if (script.respond) {
+      turns = script.respond(await _c.req.raw.clone().json().catch(() => ({})));
+    } else {
+      const idx = callCount < responses.length ? callCount : responses.length - 1;
+      turns = responses[idx];
+    }
     callCount++;
-    return new Response(streamFor(responses[idx]), {
+    return new Response(streamFor(turns), {
       headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
     });
   });
@@ -126,8 +151,11 @@ function streamFor(turns: ScriptedTurn[]): ReadableStream<Uint8Array> {
           blockIndex++;
         }
       }
+      // Faithful to the real API: a turn containing a tool_use stops for the
+      // tool, not because the assistant finished.
+      const stopReason = turns.some((t) => t.kind === "tool_use") ? "tool_use" : "end_turn";
       controller.enqueue(
-        encoder.encode(sse("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn" } })),
+        encoder.encode(sse("message_delta", { type: "message_delta", delta: { stop_reason: stopReason } })),
       );
       controller.enqueue(encoder.encode(sse("message_stop", { type: "message_stop" })));
       controller.close();

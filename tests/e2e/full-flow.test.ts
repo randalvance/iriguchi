@@ -23,7 +23,13 @@ const E2E = process.env.IRI_E2E === "1";
     });
     const logger = createLogger({ sink: () => {} });
     const store = createStore({ dbPath: config.dbPath });
-    const gw = Bun.serve({ port: 0, fetch: buildApp({ config, store, logger }).fetch });
+    const gw = Bun.serve({
+      port: 0,
+      fetch: buildApp({ config: config, store, logger }).fetch,
+      // Match src/server.ts: Bun's 10s default idleTimeout closes the
+      // socket while a slow provider is still evaluating the prompt.
+      idleTimeout: 255,
+    });
 
     const weatherProc = spawn({
       cmd: ["bun", "examples/weather-app/src/server.ts"],

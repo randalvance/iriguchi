@@ -29,8 +29,9 @@ const baseConfig = () => ({
       apiKey: "ak-test",
       baseUrl: "https://api.anthropic.com",
       defaultModel: "claude-sonnet-4-6",
+      authStyle: "api_key" as const,
     },
-  } as Record<string, { name: string; apiKey: string; baseUrl: string; defaultModel: string }>,
+  } as Record<string, { name: string; apiKey: string; baseUrl: string; defaultModel: string; authStyle: "api_key" }>,
   defaultProvider: "anthropic",
 });
 
@@ -48,7 +49,7 @@ describe("runAgentStream — generic agent (no iri_agent)", () => {
         config: {
           ...baseConfig(),
           providers: {
-            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
+            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6", authStyle: "api_key" as const },
           },
         },
         store,
@@ -65,17 +66,35 @@ describe("runAgentStream — generic agent (no iri_agent)", () => {
 
 describe("runAgentStream — app-owned agent with tool call", () => {
   it("invokes app endpoint and streams final answer", async () => {
+    // Scripted by content, not call index: the SDK issues a preliminary
+    // tool-less call before the agent turn, so index-based scripting hands the
+    // tool_use to a request that declared no tools. The run still emits the
+    // scripted final text, so asserting on output alone passes while the app is
+    // never called — which is exactly what this test used to do.
     const fake = spinUpFakeAnthropic({
-      // First API call → tool_use; second API call (after tool result) → text answer.
-      responses: [
-        [{ kind: "tool_use", id: "tu_1", name: "get_forecast", input: { location: "NYC" } }],
-        [{ kind: "text", text: "Sunny, 72°F." }],
-      ],
+      respond: (body: any) => {
+        const declaresAppTool = (body.tools ?? []).some(
+          (t: any) => t.name === "mcp__app__get_forecast",
+        );
+        const sawToolResult = JSON.stringify(body.messages ?? []).includes("tool_result");
+        if (!declaresAppTool) return [{ kind: "text", text: "" }];
+        if (!sawToolResult) {
+          return [
+            {
+              kind: "tool_use",
+              id: "tu_1",
+              name: "mcp__app__get_forecast",
+              input: { location: "NYC" },
+            },
+          ];
+        }
+        return [{ kind: "text", text: "Sunny, 72°F." }];
+      },
     });
+    const appCalls: unknown[] = [];
     const appApp = new Hono();
     appApp.post("/api/forecast", async (c) => {
-      const body = await c.req.json();
-      expect(body).toEqual({ location: "NYC" });
+      appCalls.push(await c.req.json());
       return Response.json({ temp_f: 72, condition: "sunny" });
     });
     const appServer = Bun.serve({ port: 0, fetch: appApp.fetch });
@@ -111,13 +130,16 @@ describe("runAgentStream — app-owned agent with tool call", () => {
         config: {
           ...baseConfig(),
           providers: {
-            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
+            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6", authStyle: "api_key" as const },
           },
         },
         store,
         request: { requestId: "01H", agentId: "weather-bot", model: null, messages: [{ role: "user", content: "weather in NYC?" }], showToolCalls: false },
       });
       const out = await collect(stream);
+      // Assert the app was actually reached, not merely that the scripted text
+      // came back — the latter is true even when the tool never runs.
+      expect(appCalls).toEqual([{ location: "NYC" }]);
       expect(out).toContain("Sunny, 72°F.");
       expect(out).toContain("data: [DONE]");
     } finally {
@@ -133,7 +155,7 @@ describe("runAgentStream — app-owned agent with tool call", () => {
         config: {
           ...baseConfig(),
           providers: {
-            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6" },
+            anthropic: { name: "anthropic", apiKey: "ak-test", baseUrl: `http://localhost:${fake.port}`, defaultModel: "claude-sonnet-4-6", authStyle: "api_key" as const },
           },
         },
         store,
@@ -175,8 +197,8 @@ describe("runAgentStream — agent.provider resolution", () => {
         config: {
           ...baseConfig(),
           providers: {
-            anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fakeDefault.port}`, defaultModel: "claude-sonnet-4-6" },
-            alt: { name: "alt", apiKey: "ak-alt", baseUrl: `http://localhost:${fakeAlt.port}`, defaultModel: "claude-sonnet-4-6" },
+            anthropic: { name: "anthropic", apiKey: "ak", baseUrl: `http://localhost:${fakeDefault.port}`, defaultModel: "claude-sonnet-4-6", authStyle: "api_key" as const },
+            alt: { name: "alt", apiKey: "ak-alt", baseUrl: `http://localhost:${fakeAlt.port}`, defaultModel: "claude-sonnet-4-6", authStyle: "api_key" as const },
           },
           defaultProvider: "anthropic",
         },
@@ -225,12 +247,14 @@ describe("runAgentStream — agent.provider resolution", () => {
               apiKey: "ak",
               baseUrl: `http://localhost:${fakeDefault.port}`,
               defaultModel: "claude-opus-5",
+              authStyle: "api_key" as const,
             },
             alt: {
               name: "alt",
               apiKey: "ak-alt",
               baseUrl: `http://localhost:${fakeAlt.port}`,
               defaultModel: "alt-model-9000",
+              authStyle: "api_key" as const,
             },
           },
           defaultProvider: "anthropic",
