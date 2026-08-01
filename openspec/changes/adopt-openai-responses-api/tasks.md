@@ -1,6 +1,6 @@
 ## 1. Scripted Responses provider test helper
 
-- [ ] 1.1 Add `tests/helpers/fake-responses-provider.ts`: a Bun server serving `POST /v1/responses`, scripted with successive responses like the existing `spinUpFakeAnthropic` (`responses: [[function_call], [text]]`).
+- [ ] 1.1 Add `tests/helpers/fake-responses-provider.ts`: a server built on `tests/helpers/listen.ts` serving `POST /v1/responses`, scripted with successive responses like the existing `spinUpFakeAnthropic` (`responses: [[function_call], [text]]`).
 - [ ] 1.2 Support emitting `function_call` output items with ids and JSON arguments, plain `message`/`output_text` items, and a mix of both in one response.
 - [ ] 1.3 Support streaming mode, emitting `response.created`, `response.output_text.delta`, and `response.completed` events.
 - [ ] 1.4 Support scripted failure modes: non-2xx with an error body, and connection refusal, so error classification can be tested.
@@ -59,7 +59,7 @@
 
 ## 7. Verification
 
-- [ ] 7.1 Run `bun test` and `bunx tsc --noEmit`; confirm no regressions.
+- [ ] 7.1 Run `npm test` and `npx tsc --noEmit`; confirm no regressions.
 - [ ] 7.2 Run `openspec validate adopt-openai-responses-api` and resolve findings.
 - [ ] 7.3 Confirm the full suite still runs with no provider credentials and no network.
 - [ ] 7.4 Add an opt-in live run against a real Responses provider in `tests/e2e/`, gated like the existing e2e tests.

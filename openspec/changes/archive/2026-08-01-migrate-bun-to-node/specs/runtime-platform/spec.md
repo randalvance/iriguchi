@@ -18,7 +18,7 @@ The gateway SHALL execute on Node.js and declare its minimum supported version i
 
 ### Requirement: TypeScript sources execute without a build step
 
-The gateway SHALL run its TypeScript sources directly through the Node runtime, producing no compiled output directory. Source files SHALL remain restricted to erasable TypeScript syntax. Type checking SHALL be available as a separate, non-blocking command.
+The gateway SHALL run its TypeScript sources directly through the Node runtime, producing no compiled output directory. Source files SHALL remain restricted to erasable TypeScript syntax, and this restriction SHALL be enforced at type-check time rather than discovered at startup. Type checking SHALL be available as a separate, non-blocking command.
 
 #### Scenario: Starting the server from source
 - **WHEN** `npm start` is run
@@ -27,6 +27,10 @@ The gateway SHALL run its TypeScript sources directly through the Node runtime, 
 #### Scenario: Type checking is a distinct gate
 - **WHEN** `npm run typecheck` is run
 - **THEN** `tsc --noEmit` reports type errors without emitting files, and its result does not affect the ability to start the server
+
+#### Scenario: Non-erasable syntax is rejected before it reaches the runtime
+- **WHEN** a source file introduces an enum, a namespace, or a constructor parameter property
+- **THEN** `npm run typecheck` fails, rather than the failure surfacing only when the server process starts
 
 ### Requirement: Registry persistence uses the embedded SQLite driver
 

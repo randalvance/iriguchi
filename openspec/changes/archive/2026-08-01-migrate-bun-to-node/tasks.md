@@ -66,4 +66,4 @@
 
 ## 8. Sequencing follow-up
 
-- [ ] 8.1 Once this change is archived, confirm `adopt-openai-responses-api` group 1 targets Vitest and `tests/helpers/listen.ts` rather than the Bun fixtures its tasks currently describe.
+- [x] 8.1 Confirmed during archive: `adopt-openai-responses-api` task 1.1 now targets `tests/helpers/listen.ts` and task 7.1 runs `npm test` / `npx tsc --noEmit`.
