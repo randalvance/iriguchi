@@ -1,8 +1,9 @@
-import { describe, it, expect } from "bun:test";
-import { spawn } from "bun";
+import { describe, it, expect } from "vitest";
+import { spawn } from "../helpers/spawn.ts";
 import { buildApp } from "../../src/server.ts";
 import { createStore } from "../../src/registry/store.ts";
 import { createLogger } from "../../src/logger.ts";
+import { listen } from "../helpers/listen.ts";
 
 /**
  * Drives the real weather-app example against a real gateway to prove the
@@ -35,14 +36,14 @@ describe("example app handshake", () => {
       registrationSecret: "reg-secret",
     };
     const logger = createLogger({ sink: () => {} });
-    const gw = Bun.serve({
+    const gw = listen({
       port: 0,
       fetch: buildApp({ config: config as any, store, logger }).fetch,
     });
 
     const weatherProc = spawn({
-      // process.execPath, not "bun": the test runner's own binary is always
-      // present, whether or not bun is on PATH.
+      // process.execPath, not "node": the test runner's own binary is always
+      // present, whichever Node install is on PATH.
       cmd: [process.execPath, "examples/weather-app/src/server.ts"],
       env: {
         ...process.env,

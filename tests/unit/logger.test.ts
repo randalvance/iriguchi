@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { createLogger, type LogEvent } from "../../src/logger.ts";
 
 function captureLogger() {

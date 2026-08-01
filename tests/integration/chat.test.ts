@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
 import { buildApp } from "../../src/server.ts";
 import { createStore, type Store } from "../../src/registry/store.ts";
@@ -6,6 +6,7 @@ import { spinUpFakeAnthropic } from "../helpers/fake-anthropic.ts";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { listen } from "../helpers/listen.ts";
 
 let tmp: string;
 let store: Store;
@@ -281,7 +282,7 @@ describe("POST /v1/chat/completions — non-streaming", () => {
   it("rejects a non-boolean stream with 400 and runs no agent", async () => {
     let calls = 0;
     const fake = spinUpFakeAnthropic({ turns: [{ kind: "text", text: "unused" }] });
-    const countingFake = Bun.serve({
+    const countingFake = listen({
       port: 0,
       fetch: (req) => {
         calls++;
@@ -322,7 +323,7 @@ describe("POST /v1/chat/completions — non-streaming", () => {
     // no bytes at that point, so the failure must still become a status code.
     const rejecting = new Hono();
     rejecting.post("/v1/messages", () => Response.json({ error: "nope" }, { status: 400 }));
-    const server = Bun.serve({ port: 0, fetch: rejecting.fetch });
+    const server = listen({ port: 0, fetch: rejecting.fetch });
     try {
       const app = buildApp({ config: cfgFor(server.port), store });
       const res = await app.fetch(chatRequest({ stream: false }));
@@ -347,7 +348,7 @@ describe("POST /v1/chat/completions — non-streaming", () => {
     });
     const appApp = new Hono();
     appApp.post("/api/forecast", () => Response.json({ temp_f: 72, condition: "sunny" }));
-    const appServer = Bun.serve({ port: 0, fetch: appApp.fetch });
+    const appServer = listen({ port: 0, fetch: appApp.fetch });
     try {
       registerWeatherBot(store, appServer.port);
       const app = buildApp({ config: cfgFor(fake.port), store });
@@ -378,7 +379,7 @@ describe("POST /v1/chat/completions — non-streaming", () => {
     });
     const appApp = new Hono();
     appApp.post("/api/forecast", () => Response.json({ temp_f: 72, condition: "sunny" }));
-    const appServer = Bun.serve({ port: 0, fetch: appApp.fetch });
+    const appServer = listen({ port: 0, fetch: appApp.fetch });
     try {
       registerWeatherBot(store, appServer.port);
       const app = buildApp({ config: cfgFor(fake.port), store });

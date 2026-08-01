@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Tool } from "../registry/schema.ts";
 
 export type ToolInvocationResult = unknown; // either app's JSON or { error: { ... } }
@@ -83,7 +84,7 @@ export async function invokeApiCallTool(opts: {
       attempt.kind === "network" ||
       (attempt.kind === "http" && (attempt.status ?? 0) >= 500));
   if (retriable) {
-    await Bun.sleep(500);
+    await sleep(500);
     attempt = await callOnce({ url, method, body: opts.input, appToken: opts.appToken, timeoutMs });
   }
   if (attempt.ok) return attempt.data;

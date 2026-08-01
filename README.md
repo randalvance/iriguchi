@@ -2,21 +2,18 @@
 
 Iriguchi (Japanese: "entrance / gateway") is an AI gateway: a single OpenAI-compatible chat endpoint that runs Claude Agent SDK-powered agents on behalf of other applications. Apps register themselves with the gateway and expose a `/agents-manifest` endpoint describing their agents, tools, and skills. Other apps don't need to embed agent logic — they just call this gateway.
 
-- **Stack:** Bun, Hono, Zod, `@anthropic-ai/claude-agent-sdk`, `bun:sqlite`.
+- **Stack:** Node (≥ 24), Hono, Zod, `@anthropic-ai/claude-agent-sdk`, `node:sqlite`. TypeScript runs directly — no build step.
 - **OpenAI compat:** Vanilla `/v1/chat/completions` works with OpenWebUI, OpenCode, and other OpenAI-compatible clients. App-aware mode is opt-in via the `iri_agent` field.
 - **Multi-provider:** Named Anthropic-shaped backends configured side by side — Anthropic direct, OpenRouter's Anthropic endpoint, or local Ollama (≥ 0.14.0) / LM Studio (≥ 0.4.1), both of which expose the Anthropic `/v1/messages` API natively. Agents pick their provider in their manifest.
 
 ## Quickstart
 
-0. Install [Bun](https://bun.sh) if you don't have it (or use the repo's devcontainer):
-   ```bash
-   curl -fsSL https://bun.sh/install | bash
-   ```
+0. Install [Node.js](https://nodejs.org) 24 or newer if you don't have it (or use the repo's devcontainer). Node runs the TypeScript sources directly, and `node:sqlite` needs that version.
 1. Copy `.env.example` to `.env` and fill in `IRI_API_KEY`, `IRI_REGISTRATION_SECRET`, and at least one provider triple (`IRI_PROVIDER_<NAME>_API_KEY` / `_BASE_URL` / `_DEFAULT_MODEL`). For a local LM Studio provider, start LM Studio's server (default port 1234) and use the model id it reports at `/v1/models`.
 2. Start the gateway:
    ```bash
-   bun install
-   bun run dev
+   npm install
+   npm run dev
    ```
    It listens on `IRI_PORT` (default 4000).
 3. Verify it's up:
@@ -27,8 +24,8 @@ Iriguchi (Japanese: "entrance / gateway") is an AI gateway: a single OpenAI-comp
 4. (Optional) Start the demo weather app in another terminal:
    ```bash
    cd examples/weather-app
-   bun install
-   IRI_REGISTRATION_SECRET=$(grep IRI_REGISTRATION_SECRET ../../.env | cut -d= -f2) bun run dev
+   npm install
+   IRI_REGISTRATION_SECRET=$(grep IRI_REGISTRATION_SECRET ../../.env | cut -d= -f2) npm run dev
    ```
 5. Open <http://localhost:4001> and ask "What's the weather in NYC?"
 
@@ -121,10 +118,32 @@ curl http://localhost:4000/v1/chat/completions \
 ## Tests
 
 ```bash
-bun test               # unit + integration
-bun run typecheck      # tsc --noEmit
-IRI_E2E=1 bun run test:e2e   # real Anthropic call (manual, spends tokens)
+npm test               # unit + integration (vitest)
+npm run typecheck      # tsc --noEmit
+IRI_E2E=1 npm run test:e2e   # real Anthropic call (manual, spends tokens)
 ```
+
+`npm test` runs offline and needs no provider credentials. Type checking is a
+separate gate: Node strips types to run the sources, so `tsc` is what catches
+type errors — including non-erasable syntax that would only fail at startup.
+
+## Docker
+
+```bash
+docker build -t iriguchi .
+docker run -d --name iriguchi \
+  -p 4000:4000 \
+  -v iriguchi-data:/data \
+  --env-file .env \
+  iriguchi
+```
+
+The image runs as a non-root user and takes all configuration from the
+environment — nothing is baked in, and startup fails if `IRI_API_KEY`,
+`IRI_REGISTRATION_SECRET`, or a provider triple is missing. The registry
+database lives on the `/data` volume (`IRI_DB_PATH=/data/iriguchi.db`) so
+registered apps survive replacing the container; `/tmp/iri` is disposable
+scratch. Health is reported at `/healthz`.
 
 ## Layout
 

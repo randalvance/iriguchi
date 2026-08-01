@@ -1,9 +1,10 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { Hono } from "hono";
 import { buildApp } from "../../src/server.ts";
 import { createStore } from "../../src/registry/store.ts";
 import { createLogger } from "../../src/logger.ts";
 import { loadConfig } from "../../src/config.ts";
+import { listen } from "../helpers/listen.ts";
 
 // Gated smoke: one tool-calling turn through the gateway per configured
 // provider. This is the check that replaced the old "Claude-family only"
@@ -21,7 +22,7 @@ import { loadConfig } from "../../src/config.ts";
 //   IRI_PROVIDER_OPENROUTER_BASE_URL=https://openrouter.ai/api \
 //   IRI_PROVIDER_OPENROUTER_DEFAULT_MODEL=moonshotai/kimi-k3 \
 //   IRI_PROVIDER_OPENROUTER_AUTH_STYLE=auth_token \
-//   bun run test:e2e
+//   npm run test:e2e
 //
 // This spends real tokens. It is also the only check that exercises the
 // provider's tool translation: a model or runtime that cannot accept tool
@@ -48,11 +49,11 @@ const providerNames = config
   it.each(providerNames.map((n) => [n]))("provider %s completes a tool-calling turn", async (name) => {
     const logger = createLogger({ sink: () => {} });
     const store = createStore({ dbPath: ":memory:" });
-    const gw = Bun.serve({
+    const gw = listen({
       port: 0,
       fetch: buildApp({ config: config!, store, logger }).fetch,
-      // Match src/server.ts: Bun's 10s default idleTimeout closes the
-      // socket while a slow provider is still evaluating the prompt.
+      // Match src/server.ts: without this the server's request timeout can
+      // close the socket while a slow provider is still evaluating the prompt.
       idleTimeout: 255,
     });
 
@@ -62,7 +63,7 @@ const providerNames = config
       toolCalls += 1;
       return Response.json({ answer: "the magic number is 407" });
     });
-    const toolServer = Bun.serve({ port: 0, fetch: toolApp.fetch });
+    const toolServer = listen({ port: 0, fetch: toolApp.fetch });
     try {
       store.upsertApp({
         id: `smoke-${name}`,

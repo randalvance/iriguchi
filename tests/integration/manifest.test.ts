@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Hono } from "hono";
 import { fetchManifest, ManifestFetchError } from "../../src/registry/manifest.ts";
+import { setTimeout as sleep } from "node:timers/promises";
+import { listen } from "../helpers/listen.ts";
 
 function spinUpMockApp(handler: (c: any) => Response | Promise<Response>) {
   const app = new Hono();
   app.get("/agents-manifest", (c) => handler(c));
-  return Bun.serve({ port: 0, fetch: app.fetch });
+  return listen({ port: 0, fetch: app.fetch });
 }
 
 describe("fetchManifest", () => {
@@ -96,7 +98,7 @@ describe("fetchManifest", () => {
 
   it("respects a custom timeout and reports it as a timeout", async () => {
     const server = spinUpMockApp(async () => {
-      await Bun.sleep(200);
+      await sleep(200);
       return Response.json({});
     });
     try {

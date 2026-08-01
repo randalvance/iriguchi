@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
 import { createStore, type Store } from "../../src/registry/store.ts";
 import { startBackgroundRefresh } from "../../src/registry/refresher.ts";
 import { createLogger } from "../../src/logger.ts";
+import { setTimeout as sleep } from "node:timers/promises";
+import { listen, type TestServer } from "../helpers/listen.ts";
 
 let store: Store;
-let appServer: ReturnType<typeof Bun.serve>;
+let appServer: TestServer;
 let manifest: any;
 
 beforeEach(() => {
@@ -19,7 +21,7 @@ beforeEach(() => {
   };
   const a = new Hono();
   a.get("/agents-manifest", (c) => c.json(manifest));
-  appServer = Bun.serve({ port: 0, fetch: a.fetch });
+  appServer = listen({ port: 0, fetch: a.fetch });
   store.upsertApp({
     id: "w",
     base_url: `http://localhost:${appServer.port}`,
@@ -57,7 +59,7 @@ describe("startBackgroundRefresh", () => {
         tools: [],
         skills: [],
       });
-      await Bun.sleep(120);
+      await sleep(120);
       expect(store.lookupAgent("bot-2")?.app.id).toBe("w");
     } finally {
       handle.stop();
@@ -75,7 +77,7 @@ describe("startBackgroundRefresh", () => {
       config: refresherConfig(),
     });
     try {
-      await Bun.sleep(120);
+      await sleep(120);
       expect(store.lookupAgent("bot-1")?.app.id).toBe("w");
     } finally {
       handle.stop();
@@ -103,7 +105,7 @@ describe("startBackgroundRefresh", () => {
       config: refresherConfig(),
     });
     try {
-      await Bun.sleep(120);
+      await sleep(120);
       const stored = store.getApp("w");
       expect(stored?.manifest?.agents[0].provider).toBeUndefined();
       const warn = warnings.find(

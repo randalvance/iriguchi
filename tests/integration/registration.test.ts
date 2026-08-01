@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
 import { buildApp } from "../../src/server.ts";
 import { createStore, type Store } from "../../src/registry/store.ts";
+import { listen, type TestServer } from "../helpers/listen.ts";
 
 let store: Store;
-let appServer: ReturnType<typeof Bun.serve>;
+let appServer: TestServer;
 let baseUrl: string;
 let manifestResponse: Record<string, unknown>;
 /** When set, the mock app refuses the manifest fetch with this status. */
@@ -37,7 +38,7 @@ beforeEach(() => {
     }
     return c.json(manifestResponse);
   });
-  appServer = Bun.serve({ port: 0, fetch: appApp.fetch });
+  appServer = listen({ port: 0, fetch: appApp.fetch });
   baseUrl = `http://localhost:${appServer.port}`;
 });
 afterEach(() => {

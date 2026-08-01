@@ -1,5 +1,7 @@
+import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { readFile } from "node:fs/promises";
+import type { AddressInfo } from "node:net";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildManifest } from "./manifest.ts";
@@ -87,9 +89,10 @@ async function register(selfBaseUrl: string) {
   console.error("[weather-app] could not register with gateway after 5 attempts");
 }
 
-const server = Bun.serve({ port: PORT, fetch: app.fetch });
+const server = serve({ port: PORT, fetch: app.fetch });
 // Resolve the base URL only after binding, so WEATHER_PORT=0 (ephemeral port)
 // advertises the port we actually got rather than a literal 0.
-const selfBaseUrl = process.env.WEATHER_BASE_URL ?? `http://localhost:${server.port}`;
+const { port } = server.address() as AddressInfo;
+const selfBaseUrl = process.env.WEATHER_BASE_URL ?? `http://localhost:${port}`;
 console.log(`[weather-app] listening on ${selfBaseUrl}`);
 void register(selfBaseUrl);

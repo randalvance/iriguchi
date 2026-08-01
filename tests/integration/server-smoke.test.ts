@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { buildApp } from "../../src/server.ts";
 
 const cfg = {

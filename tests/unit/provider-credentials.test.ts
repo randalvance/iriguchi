@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { providerCredentialEnv } from "../../src/agent/runner.ts";
 import type { Provider } from "../../src/config.ts";
 

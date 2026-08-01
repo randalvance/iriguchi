@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
 import { createStore, type Store } from "../../src/registry/store.ts";
 import { runAgentStream } from "../../src/agent/runner.ts";
@@ -6,6 +6,7 @@ import { spinUpFakeAnthropic } from "../helpers/fake-anthropic.ts";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { listen } from "../helpers/listen.ts";
 
 let tmp: string;
 let store: Store;
@@ -97,7 +98,7 @@ describe("runAgentStream — app-owned agent with tool call", () => {
       appCalls.push(await c.req.json());
       return Response.json({ temp_f: 72, condition: "sunny" });
     });
-    const appServer = Bun.serve({ port: 0, fetch: appApp.fetch });
+    const appServer = listen({ port: 0, fetch: appApp.fetch });
     try {
       store.upsertApp({
         id: "weather-app",

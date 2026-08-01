@@ -1,0 +1,30 @@
+# Keep local secrets and state out of the build context. A file copied into a
+# layer survives being deleted in a later one, so exclusion is the only real
+# control here — .env and iriguchi.db both exist in a working checkout.
+.env
+.env.*
+!.env.example
+iriguchi.db
+iriguchi.db-*
+.iri-tmp
+.iri-tmp-*
+
+# Reinstalled in the image by `npm ci`; host builds may be the wrong platform.
+node_modules
+examples/**/node_modules
+
+.git
+.gitignore
+
+# Not needed at runtime.
+tests
+vitest.config.ts
+examples
+openspec
+docs
+.devcontainer
+.claude
+CLAUDE.md
+README.md
+Dockerfile
+.dockerignore

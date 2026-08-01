@@ -3,22 +3,27 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "module": "src/server.ts",
+  "main": "src/server.ts",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
-    "dev": "bun --hot src/server.ts",
-    "start": "bun src/server.ts",
-    "test": "bun test --timeout 30000",
-    "test:e2e": "IRI_E2E=1 bun test tests/e2e --timeout 120000",
-    "typecheck": "bunx tsc --noEmit"
+    "dev": "node --watch src/server.ts",
+    "start": "node src/server.ts",
+    "test": "vitest run",
+    "test:e2e": "IRI_E2E=1 vitest run tests/e2e --testTimeout 120000",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",
+    "@hono/node-server": "^1.13.0",
     "hono": "^4.0.0",
     "ulid": "^2.3.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.4.0"
+    "@types/node": "^24.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
   }
 }

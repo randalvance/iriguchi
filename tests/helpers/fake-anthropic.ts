@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { listen } from "./listen.ts";
 
 export type ScriptedTurn =
   | { kind: "text"; text: string }
@@ -58,7 +59,7 @@ export function spinUpFakeAnthropic(script: Scripted, opts: FakeAnthropicOpts = 
       headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
     });
   });
-  return Bun.serve({ port: 0, fetch: app.fetch });
+  return listen({ port: 0, fetch: app.fetch });
 }
 
 function sse(event: string, data: unknown) {

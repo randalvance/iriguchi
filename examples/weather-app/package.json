@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --hot src/server.ts",
-    "start": "bun src/server.ts"
+    "dev": "node --watch src/server.ts",
+    "start": "node src/server.ts"
   },
   "dependencies": {
+    "@hono/node-server": "^1.13.0",
     "hono": "^4.0.0"
   }
 }

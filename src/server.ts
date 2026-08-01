@@ -1,3 +1,4 @@
+import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Config } from "./config.ts";
@@ -29,17 +30,18 @@ export function buildApp(deps: AppDeps) {
   return app;
 }
 
-if (import.meta.main) {
+if (import.meta.filename === process.argv[1]) {
   const config = loadConfig();
   const logger = createLogger();
   const store = createStore({ dbPath: config.dbPath });
   const app = buildApp({ config, store, logger });
-  Bun.serve({
+  serve({
     port: config.port,
     fetch: app.fetch,
-    // Bun's default idleTimeout (10s) kills SSE connections while slow
-    // providers are still evaluating the prompt. Bun caps this at 255s.
-    idleTimeout: Math.min(255, Math.ceil(config.requestTimeoutMs / 1000)),
+    // Node's default requestTimeout (300s) would cut SSE connections short
+    // while a slow provider is still evaluating the prompt. Disable it here
+    // and let IRI_REQUEST_TIMEOUT_MS govern the request lifetime instead.
+    serverOptions: { requestTimeout: 0, headersTimeout: 0 },
   });
   startBackgroundRefresh({
     store,

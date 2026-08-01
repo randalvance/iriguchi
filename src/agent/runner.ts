@@ -18,13 +18,18 @@ import {
 const GENERIC_SYSTEM_PROMPT = "You are a helpful general-purpose assistant.";
 
 export class GatewayError extends Error {
-  constructor(
-    public httpStatus: number,
-    public type: string,
-    message: string,
-    public code?: string,
-  ) {
+  // Declared and assigned explicitly rather than as constructor parameter
+  // properties: Node runs these sources by stripping types, and parameter
+  // properties are not erasable syntax.
+  httpStatus: number;
+  type: string;
+  code?: string;
+
+  constructor(httpStatus: number, type: string, message: string, code?: string) {
     super(message);
+    this.httpStatus = httpStatus;
+    this.type = type;
+    this.code = code;
   }
 }
 

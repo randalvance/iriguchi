@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createStore, type Store } from "../../src/registry/store.ts";
 import { runAgentStream } from "../../src/agent/runner.ts";
 import { spinUpFakeAnthropic } from "../helpers/fake-anthropic.ts";

@@ -7,14 +7,15 @@ export class ManifestFetchError extends Error {
    * 2xx responses that failed JSON parsing or schema validation.
    */
   public readonly status?: number;
+  // Assigned in the body rather than as a constructor parameter property:
+  // Node strips types to run these sources, and parameter properties are not
+  // erasable syntax.
+  public readonly cause?: unknown;
 
-  constructor(
-    message: string,
-    public readonly cause?: unknown,
-    status?: number,
-  ) {
+  constructor(message: string, cause?: unknown, status?: number) {
     super(message);
     this.name = "ManifestFetchError";
+    this.cause = cause;
     this.status = status;
   }
 }

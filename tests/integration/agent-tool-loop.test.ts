@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
 import { createStore, type Store } from "../../src/registry/store.ts";
 import { runAgentChunks } from "../../src/agent/runner.ts";
@@ -7,6 +7,7 @@ import type { OpenAIChunk } from "../../src/agent/openai-sse.ts";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { listen } from "../helpers/listen.ts";
 
 /**
  * The full tool loop end to end against a scripted provider: an agent declares
@@ -47,7 +48,7 @@ function spinUpStubApp(reply: () => Response, received: AppRequest[]) {
     });
     return reply();
   });
-  return Bun.serve({ port: 0, fetch: app.fetch });
+  return listen({ port: 0, fetch: app.fetch });
 }
 
 const FORECAST_TOOL = {
