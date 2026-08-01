@@ -34,6 +34,32 @@ export type OpenAIChunk = {
   choices: OpenAIChoice[];
 };
 
+export type OpenAIFinishReason = NonNullable<OpenAIChoice["finish_reason"]>;
+
+export type ChatCompletionToolCall = {
+  id?: string;
+  type: "function";
+  function: { name: string; arguments: string };
+};
+
+export type ChatCompletionMessage = {
+  role: "assistant";
+  content: string;
+  tool_calls?: ChatCompletionToolCall[];
+};
+
+export type ChatCompletion = {
+  id: string;
+  object: "chat.completion";
+  created: number;
+  model: string;
+  choices: Array<{
+    index: number;
+    message: ChatCompletionMessage;
+    finish_reason: OpenAIFinishReason;
+  }>;
+};
+
 export type TranslateContext = {
   id: string;
   created: number;
@@ -104,3 +130,61 @@ export function formatSseChunk(c: OpenAIChunk): string {
 }
 
 export const DONE_SENTINEL = "data: [DONE]\n\n";
+
+/**
+ * Collapse a completed run's chunks into a single non-streaming
+ * `chat.completion`. Pure, so the streaming and non-streaming responses are
+ * provably derived from the same event sequence.
+ *
+ * `chunks` must be non-empty: the runner always emits a `stream_start` chunk
+ * before any SDK work, so an empty drain is an internal invariant violation
+ * rather than an empty result.
+ */
+export function aggregateChunks(chunks: OpenAIChunk[]): ChatCompletion {
+  const first = chunks[0];
+  if (!first) {
+    throw new Error("aggregateChunks: cannot aggregate an empty chunk sequence");
+  }
+
+  let content = "";
+  let finishReason: OpenAIFinishReason | null = null;
+  // Keyed by delta index so partial tool calls accumulate correctly if the
+  // translator ever splits arguments across chunks (today it does not).
+  const toolCalls = new Map<number, ChatCompletionToolCall>();
+
+  for (const chunk of chunks) {
+    for (const choice of chunk.choices) {
+      if (choice.delta.content) content += choice.delta.content;
+      for (const call of choice.delta.tool_calls ?? []) {
+        const existing = toolCalls.get(call.index);
+        if (existing) {
+          existing.id ??= call.id;
+          if (call.function.name) existing.function.name = call.function.name;
+          existing.function.arguments += call.function.arguments;
+        } else {
+          toolCalls.set(call.index, {
+            id: call.id,
+            type: "function",
+            function: { name: call.function.name, arguments: call.function.arguments },
+          });
+        }
+      }
+      if (choice.finish_reason) finishReason = choice.finish_reason;
+    }
+  }
+
+  const message: ChatCompletionMessage = { role: "assistant", content };
+  if (toolCalls.size > 0) {
+    message.tool_calls = [...toolCalls.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, call]) => call);
+  }
+
+  return {
+    id: first.id,
+    object: "chat.completion",
+    created: first.created,
+    model: first.model,
+    choices: [{ index: 0, message, finish_reason: finishReason ?? "stop" }],
+  };
+}

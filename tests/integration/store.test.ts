@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach } from "vitest";
 import { createStore, type Store } from "../../src/registry/store.ts";
 import type { Manifest } from "../../src/registry/schema.ts";
 
@@ -122,5 +122,53 @@ describe("store", () => {
         manifest: fixtureManifest("b", ["shared-bot"]),
       }),
     ).toThrow();
+  });
+
+  // Guards the hand-rolled transaction helper in store.ts: node:sqlite has no
+  // transaction() of its own, so nothing but this wrapper keeps the app row and
+  // its agent rows all-or-nothing.
+  it("rolls back the app row when the write fails partway through", () => {
+    const m = fixtureManifest("partial-app", ["partial-bot"]);
+    let reads = 0;
+    // upsertApp reads `agents` three times: the conflict check, the manifest
+    // JSON passed to the insert, then the keep-list. Failing on the third means
+    // the app row is already written, so anything surviving proves no rollback.
+    const failing = {
+      ...m,
+      get agents() {
+        reads++;
+        if (reads >= 3) throw new Error("boom");
+        return m.agents;
+      },
+    } as Manifest;
+
+    expect(() =>
+      store.upsertApp({
+        id: "partial-app",
+        base_url: "http://x:3",
+        app_token: "t3",
+        manifest: failing,
+      }),
+    ).toThrow("boom");
+
+    expect(store.getApp("partial-app")).toBeNull();
+    expect(store.lookupAgent("partial-bot")).toBeNull();
+  });
+
+  it("replaces agent rows on re-registration without orphans", () => {
+    store.upsertApp({
+      id: "a",
+      base_url: "http://x:1",
+      app_token: "t1",
+      manifest: fixtureManifest("a", ["bot-1", "bot-2"]),
+    });
+    store.upsertApp({
+      id: "a",
+      base_url: "http://x:1",
+      app_token: "t1",
+      manifest: fixtureManifest("a", ["bot-2"]),
+    });
+    expect(store.lookupAgent("bot-2")?.app.id).toBe("a");
+    expect(store.lookupAgent("bot-1")).toBeNull();
   });
 });

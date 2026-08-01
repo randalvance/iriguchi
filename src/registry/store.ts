@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import type { Manifest, Agent } from "./schema.ts";
 
 export type StoredApp = {
@@ -27,7 +27,25 @@ export type Store = {
 };
 
 export function createStore(opts: { dbPath: string }): Store {
-  const db = new Database(opts.dbPath);
+  const db = new DatabaseSync(opts.dbPath);
+
+  // node:sqlite has no transaction() helper (bun:sqlite inherited one from
+  // better-sqlite3), so wrap the callback by hand. Returns a function to match
+  // the previous call shape: transaction(fn)().
+  const transaction =
+    <T>(fn: () => T) =>
+    (): T => {
+      db.exec("BEGIN");
+      try {
+        const out = fn();
+        db.exec("COMMIT");
+        return out;
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
+    };
+
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
@@ -91,10 +109,12 @@ export function createStore(opts: { dbPath: string }): Store {
   return {
     upsertApp(input) {
       const now = Date.now();
-      db.transaction(() => {
+      transaction(() => {
         // Atomic check + insert: no other write can interleave.
         for (const a of input.manifest.agents) {
-          const conflict = conflictStmt.get(a.id, input.id) as { id: string } | null;
+          // node:sqlite returns undefined for no-row where bun:sqlite returned
+          // null; both are falsy, so the guard below is unchanged.
+          const conflict = conflictStmt.get(a.id, input.id) as { id: string } | undefined;
           if (conflict) {
             throw new Error(`Agent id "${a.id}" is already owned by another app`);
           }

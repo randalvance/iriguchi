@@ -1,7 +1,7 @@
 {
   "name": "Iriguchi",
-  "image": "oven/bun:1",
-  "remoteUser": "bun",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:26",
+  "remoteUser": "node",
   "features": {
     "ghcr.io/devcontainers/features/git:1": {}
   },
@@ -11,11 +11,10 @@
     "4000": { "label": "iriguchi gateway", "onAutoForward": "notify" },
     "4001": { "label": "weather-app demo", "onAutoForward": "silent" }
   },
-  "postCreateCommand": "bun install && cd examples/weather-app && bun install",
+  "postCreateCommand": "npm install && cd examples/weather-app && npm install",
   "customizations": {
     "vscode": {
       "extensions": [
-        "oven.bun-vscode",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode"
       ],

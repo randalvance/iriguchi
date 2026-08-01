@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { buildApp } from "../../src/server.ts";
 
 describe("server", () => {
@@ -13,7 +13,7 @@ describe("server", () => {
         dbPath: ":memory:",
         tmpDir: ".iri-tmp",
         providers: {
-          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6" },
+          anthropic: { name: "anthropic", apiKey: "ak", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6", authStyle: "api_key" as const },
         },
         defaultProvider: "anthropic",
         apiKey: "k",

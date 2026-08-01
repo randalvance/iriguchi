@@ -2,13 +2,17 @@
   "compilerOptions": {
     "lib": ["ESNext"],
     "target": "ESNext",
-    "module": "ESNext",
+    "module": "nodenext",
     "moduleDetection": "force",
     "jsx": "preserve",
     "allowJs": true,
-    "moduleResolution": "bundler",
+    "moduleResolution": "nodenext",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
+    // Node runs these sources by stripping types. Anything non-erasable
+    // (enums, namespaces, constructor parameter properties) parses fine under
+    // vitest's esbuild but crashes the real server at startup, so fail here.
+    "erasableSyntaxOnly": true,
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
@@ -16,7 +20,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
-    "types": ["bun-types"]
+    "types": ["node"]
   },
   "include": ["src/**/*", "tests/**/*", "examples/**/*"]
 }

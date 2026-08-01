@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { jsonSchemaToZodRawShape } from "../../src/agent/json-schema-to-zod.ts";
 import { z } from "zod";
 

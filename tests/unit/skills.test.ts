@@ -1,8 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { materializeSkills } from "../../src/agent/skills.ts";
+import { existsSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
+import { listen } from "../helpers/listen.ts";
 
 describe("materializeSkills", () => {
   let root: string;
@@ -20,7 +23,7 @@ describe("materializeSkills", () => {
       skills: [],
     });
     expect(cwd).toBe(join(root, "agents", "weather-bot"));
-    expect(await Bun.file(join(cwd, ".claude")).exists()).toBe(false);
+    expect(existsSync(join(cwd, ".claude"))).toBe(false);
   });
 
   it("writes inline skill to .claude/skills/<name>/SKILL.md", async () => {
@@ -41,7 +44,7 @@ describe("materializeSkills", () => {
   });
 
   it("fetches url-based skill", async () => {
-    const server = Bun.serve({
+    const server = listen({
       port: 0,
       fetch: () =>
         new Response("---\nname: remote\ndescription: x\n---\n\nremote body"),
@@ -68,15 +71,15 @@ describe("materializeSkills", () => {
       agentId: "bot",
       skills: [{ name: "a", content: "---\nname: a\ndescription: x\n---\n\nA" }],
     });
-    expect(await Bun.file(join(cwd, ".claude/skills/a/SKILL.md")).exists()).toBe(true);
+    expect(existsSync(join(cwd, ".claude/skills/a/SKILL.md"))).toBe(true);
 
     await materializeSkills({
       tmpDir: root,
       agentId: "bot",
       skills: [{ name: "b", content: "---\nname: b\ndescription: x\n---\n\nB" }],
     });
-    expect(await Bun.file(join(cwd, ".claude/skills/a/SKILL.md")).exists()).toBe(false);
-    expect(await Bun.file(join(cwd, ".claude/skills/b/SKILL.md")).exists()).toBe(true);
+    expect(existsSync(join(cwd, ".claude/skills/a/SKILL.md"))).toBe(false);
+    expect(existsSync(join(cwd, ".claude/skills/b/SKILL.md"))).toBe(true);
   });
 
   it("throws on fetch failure", async () => {
@@ -90,7 +93,7 @@ describe("materializeSkills", () => {
   });
 
   it("throws with HTTP status message on URL fetch returning 5xx", async () => {
-    const server = Bun.serve({
+    const server = listen({
       port: 0,
       fetch: () => new Response("server fail", { status: 503 }),
     });
@@ -108,10 +111,10 @@ describe("materializeSkills", () => {
   });
 
   it("aborts URL fetch after skillFetchTimeoutMs", async () => {
-    const server = Bun.serve({
+    const server = listen({
       port: 0,
       fetch: async () => {
-        await Bun.sleep(200);
+        await sleep(200);
         return new Response("late");
       },
     });

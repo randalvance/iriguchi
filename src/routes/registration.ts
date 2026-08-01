@@ -30,6 +30,39 @@ export function registrationRoutes(deps: { config: Config; store: Store; logger:
     };
   }
 
+  /**
+   * The gateway mints an app token and presents it on the very next manifest
+   * fetch, so during initial registration the app cannot possibly recognize
+   * it. An app that gates `GET /agents-manifest` on token equality therefore
+   * deadlocks its own registration. A bare `app_unavailable` reads as "your
+   * app is down", so 401/403 gets its own code and an actionable message.
+   */
+  function manifestFetchErrorResponse(err: ManifestFetchError) {
+    if (err.status === 401 || err.status === 403) {
+      return {
+        body: {
+          error: {
+            type: "app_unavailable",
+            code: "manifest_unauthorized",
+            message:
+              `your app rejected the gateway's credentials on GET /agents-manifest (${err.message}). ` +
+              "The gateway mints your app token immediately before this fetch and only returns it once " +
+              "registration succeeds, so your app cannot know the token yet. GET /agents-manifest must " +
+              "accept any non-empty Bearer token — it serves only agent metadata. Keep exact app-token " +
+              "equality on your tool endpoints, which do carry app data.",
+          },
+        },
+        code: "manifest_unauthorized" as const,
+      };
+    }
+    return {
+      body: {
+        error: { type: "app_unavailable", message: err.message, code: "app_unavailable" },
+      },
+      code: "app_unavailable" as const,
+    };
+  }
+
   const appTokenAuth = bearerAuth({
     resolve: (c) => {
       const id = c.req.param("id");
@@ -66,8 +99,14 @@ export function registrationRoutes(deps: { config: Config; store: Store; logger:
         return c.json({ app_token: appToken, accepted_agents: manifest.agents.map((a) => a.id) }, 201);
       } catch (err) {
         if (err instanceof ManifestFetchError) {
-          deps.logger.warn("app.register_failed", { app_id: body.id, err: err.message });
-          return c.json({ error: { type: "app_unavailable", message: err.message, code: "app_unavailable" } }, 502);
+          const mapped = manifestFetchErrorResponse(err);
+          deps.logger.warn("app.register_failed", {
+            app_id: body.id,
+            err: err.message,
+            code: mapped.code,
+            upstream_status: err.status ?? null,
+          });
+          return c.json(mapped.body, 502);
         }
         throw err;
       }
@@ -91,7 +130,14 @@ export function registrationRoutes(deps: { config: Config; store: Store; logger:
       return c.json({ accepted_agents: manifest.agents.map((a) => a.id) });
     } catch (err) {
       if (err instanceof ManifestFetchError) {
-        return c.json({ error: { type: "app_unavailable", message: err.message, code: "app_unavailable" } }, 502);
+        const mapped = manifestFetchErrorResponse(err);
+        deps.logger.warn("manifest.fetch_failed", {
+          app_id: id,
+          err: err.message,
+          code: mapped.code,
+          upstream_status: err.status ?? null,
+        });
+        return c.json(mapped.body, 502);
       }
       throw err;
     }

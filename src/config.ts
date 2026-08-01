@@ -1,8 +1,18 @@
+/**
+ * How a provider expects its credential to be presented to the agent runtime.
+ * `api_key` is the Anthropic-native form. `auth_token` is the bearer form used
+ * by Anthropic-compatible gateways such as OpenRouter.
+ */
+export type ProviderAuthStyle = "api_key" | "auth_token";
+
+export const PROVIDER_AUTH_STYLES: readonly ProviderAuthStyle[] = ["api_key", "auth_token"];
+
 export type Provider = {
   name: string;
   baseUrl: string;
   apiKey: string;
   defaultModel: string;
+  authStyle: ProviderAuthStyle;
 };
 
 export type Config = {
@@ -21,7 +31,7 @@ export type Config = {
 
 const REQUIRED = ["IRI_API_KEY", "IRI_REGISTRATION_SECRET"] as const;
 
-const PROVIDER_KEY_RE = /^IRI_PROVIDER_([A-Z0-9]+)_(API_KEY|BASE_URL|DEFAULT_MODEL)$/;
+const PROVIDER_KEY_RE = /^IRI_PROVIDER_([A-Z0-9]+)_(API_KEY|BASE_URL|DEFAULT_MODEL|AUTH_STYLE)$/;
 
 function intVar(env: Record<string, string | undefined>, key: string, fallback: number): number {
   const raw = env[key];
@@ -34,7 +44,10 @@ function intVar(env: Record<string, string | undefined>, key: string, fallback: 
 }
 
 function loadProviders(env: Record<string, string | undefined>): Record<string, Provider> {
-  const seen: Record<string, { apiKey?: string; baseUrl?: string; defaultModel?: string }> = {};
+  const seen: Record<
+    string,
+    { apiKey?: string; baseUrl?: string; defaultModel?: string; authStyle?: string }
+  > = {};
   for (const [key, val] of Object.entries(env)) {
     if (val === undefined || val === "") continue;
     const m = key.match(PROVIDER_KEY_RE);
@@ -44,6 +57,7 @@ function loadProviders(env: Record<string, string | undefined>): Record<string, 
     seen[name] ??= {};
     if (field === "API_KEY") seen[name].apiKey = val;
     else if (field === "BASE_URL") seen[name].baseUrl = val;
+    else if (field === "AUTH_STYLE") seen[name].authStyle = val;
     else seen[name].defaultModel = val;
   }
   const providers: Record<string, Provider> = {};
@@ -63,11 +77,20 @@ function loadProviders(env: Record<string, string | undefined>): Record<string, 
         `half-configured provider "${name}": missing IRI_PROVIDER_${name.toUpperCase()}_DEFAULT_MODEL`,
       );
     }
+    // Absent means api_key, so every provider configured before this option
+    // existed resolves exactly as it did.
+    const authStyle = parts.authStyle ?? "api_key";
+    if (!PROVIDER_AUTH_STYLES.includes(authStyle as ProviderAuthStyle)) {
+      throw new Error(
+        `invalid IRI_PROVIDER_${name.toUpperCase()}_AUTH_STYLE for provider "${name}": "${authStyle}"; expected one of [${PROVIDER_AUTH_STYLES.join(", ")}]`,
+      );
+    }
     providers[name] = {
       name,
       apiKey: parts.apiKey,
       baseUrl: parts.baseUrl,
       defaultModel: parts.defaultModel,
+      authStyle: authStyle as ProviderAuthStyle,
     };
   }
   if (Object.keys(providers).length === 0) {

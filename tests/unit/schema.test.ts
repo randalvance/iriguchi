@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { ManifestSchema } from "../../src/registry/schema.ts";
 
 const VALID_MANIFEST = {

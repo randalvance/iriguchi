@@ -1,12 +1,13 @@
+import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { readFile } from "node:fs/promises";
+import type { AddressInfo } from "node:net";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildManifest } from "./manifest.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.WEATHER_PORT ?? 4001);
-const SELF_BASE_URL = process.env.WEATHER_BASE_URL ?? `http://localhost:${PORT}`;
 const GATEWAY_URL = process.env.IRI_GATEWAY_URL ?? "http://localhost:4000";
 const REG_SECRET = process.env.IRI_REGISTRATION_SECRET ?? "";
 
@@ -14,15 +15,23 @@ let appToken: string | null = null;
 
 const app = new Hono();
 
+// Presence-only, and deliberately so: the gateway mints our app token and
+// fetches this endpoint with it before registration returns, so at that moment
+// we have never seen the token and cannot compare against it. Tightening this
+// into an equality check deadlocks registration on every startup. Safe because
+// the manifest is metadata only — tool endpoints below do check exactly.
 app.get("/agents-manifest", async (c) => {
-  if (!c.req.header("Authorization")?.startsWith("Bearer ")) {
+  const auth = c.req.header("Authorization");
+  if (!auth?.startsWith("Bearer ") || auth.length <= 7) {
     return c.json({ error: "unauthorized" }, 401);
   }
   return c.json(await buildManifest());
 });
 
+// Tool endpoints return real data and are only called after registration, so
+// they verify the app token exactly.
 app.post("/api/forecast", async (c) => {
-  if (!c.req.header("Authorization")?.startsWith("Bearer ")) {
+  if (!appToken || c.req.header("Authorization") !== `Bearer ${appToken}`) {
     return c.json({ error: "unauthorized" }, 401);
   }
   const { location, days = 3 } = (await c.req.json()) as {
@@ -49,7 +58,7 @@ app.get("/", async (c) => {
   return c.html(html);
 });
 
-async function register() {
+async function register(selfBaseUrl: string) {
   if (!REG_SECRET) {
     console.warn("[weather-app] IRI_REGISTRATION_SECRET unset, skipping registration");
     return;
@@ -59,7 +68,7 @@ async function register() {
       const res = await fetch(`${GATEWAY_URL}/apps/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${REG_SECRET}` },
-        body: JSON.stringify({ id: "weather-app", base_url: SELF_BASE_URL }),
+        body: JSON.stringify({ id: "weather-app", base_url: selfBaseUrl }),
       });
       if (!res.ok) {
         const text = await res.text();
@@ -80,6 +89,10 @@ async function register() {
   console.error("[weather-app] could not register with gateway after 5 attempts");
 }
 
-Bun.serve({ port: PORT, fetch: app.fetch });
-console.log(`[weather-app] listening on ${SELF_BASE_URL}`);
-void register();
+const server = serve({ port: PORT, fetch: app.fetch });
+// Resolve the base URL only after binding, so WEATHER_PORT=0 (ephemeral port)
+// advertises the port we actually got rather than a literal 0.
+const { port } = server.address() as AddressInfo;
+const selfBaseUrl = process.env.WEATHER_BASE_URL ?? `http://localhost:${port}`;
+console.log(`[weather-app] listening on ${selfBaseUrl}`);
+void register(selfBaseUrl);

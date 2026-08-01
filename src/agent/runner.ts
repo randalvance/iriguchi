@@ -1,6 +1,6 @@
 import { ulid } from "ulid";
 import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import type { Config } from "../config.ts";
+import type { Config, Provider } from "../config.ts";
 import type { Store, AgentLookup } from "../registry/store.ts";
 import type { Tool, Agent } from "../registry/schema.ts";
 import { materializeSkills } from "./skills.ts";
@@ -12,18 +12,24 @@ import {
   createTranslateContext,
   DONE_SENTINEL,
   type SdkEvent,
+  type OpenAIChunk,
 } from "./openai-sse.ts";
 
 const GENERIC_SYSTEM_PROMPT = "You are a helpful general-purpose assistant.";
 
 export class GatewayError extends Error {
-  constructor(
-    public httpStatus: number,
-    public type: string,
-    message: string,
-    public code?: string,
-  ) {
+  // Declared and assigned explicitly rather than as constructor parameter
+  // properties: Node runs these sources by stripping types, and parameter
+  // properties are not erasable syntax.
+  httpStatus: number;
+  type: string;
+  code?: string;
+
+  constructor(httpStatus: number, type: string, message: string, code?: string) {
     super(message);
+    this.httpStatus = httpStatus;
+    this.type = type;
+    this.code = code;
   }
 }
 
@@ -35,6 +41,31 @@ export type ChatRequest = {
   showToolCalls: boolean;
 };
 
+/**
+ * The credential variables handed to the agent runtime for a given provider.
+ *
+ * `auth_token` providers — OpenRouter's Anthropic surface, for one — carry the
+ * key in `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_API_KEY` must be present but
+ * empty. Omitting it is NOT equivalent and is not a tidy-up opportunity: with
+ * no value at all the SDK falls back to authenticating against Anthropic
+ * directly, silently bypassing the configured provider and billing elsewhere.
+ * Returning it explicitly also means it overwrites any ambient
+ * `ANTHROPIC_API_KEY` when spread over `process.env`.
+ */
+export function providerCredentialEnv(provider: Provider): Record<string, string> {
+  if (provider.authStyle === "auth_token") {
+    return {
+      ANTHROPIC_AUTH_TOKEN: provider.apiKey,
+      ANTHROPIC_API_KEY: "",
+      ANTHROPIC_BASE_URL: provider.baseUrl,
+    };
+  }
+  return {
+    ANTHROPIC_API_KEY: provider.apiKey,
+    ANTHROPIC_BASE_URL: provider.baseUrl,
+  };
+}
+
 export type RunnerOpts = {
   config: Pick<
     Config,
@@ -44,11 +75,30 @@ export type RunnerOpts = {
   request: ChatRequest;
 };
 
-export function runAgentStream(opts: RunnerOpts): AsyncIterable<string> {
+/**
+ * The run as structured OpenAI chunks. Callers that want SSE use
+ * {@link runAgentStream}; callers building a non-streaming `chat.completion`
+ * aggregate these directly rather than re-parsing the wire format.
+ *
+ * Like `runAgentStream`, resolution errors (unknown agent, unknown provider)
+ * surface as a `GatewayError` thrown from the first `next()`, not at call time.
+ */
+export function runAgentChunks(opts: RunnerOpts): AsyncIterable<OpenAIChunk> {
   return { [Symbol.asyncIterator]() { return generate(opts); } };
 }
 
-async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
+export function runAgentStream(opts: RunnerOpts): AsyncIterable<string> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for await (const chunk of runAgentChunks(opts)) {
+        yield formatSseChunk(chunk);
+      }
+      yield DONE_SENTINEL;
+    },
+  };
+}
+
+async function* generate(opts: RunnerOpts): AsyncGenerator<OpenAIChunk> {
   const { config, store, request } = opts;
   let lookup: AgentLookup | null = null;
   if (request.agentId) {
@@ -132,7 +182,7 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
       : undefined;
 
   for (const c of translateSdkEvent({ type: "stream_start" }, tCtx)) {
-    yield formatSseChunk(c);
+    yield c;
   }
 
   const prompt = buildPrompt(request.messages);
@@ -145,8 +195,7 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
     skills: "all" as const,
     env: {
       ...process.env,
-      ANTHROPIC_API_KEY: provider.apiKey,
-      ANTHROPIC_BASE_URL: provider.baseUrl,
+      ...providerCredentialEnv(provider),
     },
   };
   if (mcpServer) {
@@ -159,13 +208,12 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<string> {
   const sdkStream = query({ prompt, options: sdkOptions as any });
   for await (const evt of adaptSdkStream(sdkStream)) {
     for (const c of translateSdkEvent(evt, tCtx)) {
-      yield formatSseChunk(c);
+      yield c;
     }
   }
   for (const c of translateSdkEvent({ type: "done", reason: "stop" }, tCtx)) {
-    yield formatSseChunk(c);
+    yield c;
   }
-  yield DONE_SENTINEL;
 }
 
 function buildPrompt(messages: ChatRequest["messages"]): string {

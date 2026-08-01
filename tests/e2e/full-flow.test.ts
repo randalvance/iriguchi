@@ -1,9 +1,10 @@
-import { describe, it, expect } from "bun:test";
-import { spawn } from "bun";
+import { describe, it, expect } from "vitest";
+import { spawn } from "../helpers/spawn.ts";
 import { buildApp } from "../../src/server.ts";
 import { createStore } from "../../src/registry/store.ts";
 import { createLogger } from "../../src/logger.ts";
 import { loadConfig } from "../../src/config.ts";
+import { listen } from "../helpers/listen.ts";
 
 const E2E = process.env.IRI_E2E === "1";
 
@@ -23,10 +24,16 @@ const E2E = process.env.IRI_E2E === "1";
     });
     const logger = createLogger({ sink: () => {} });
     const store = createStore({ dbPath: config.dbPath });
-    const gw = Bun.serve({ port: 0, fetch: buildApp({ config, store, logger }).fetch });
+    const gw = listen({
+      port: 0,
+      fetch: buildApp({ config: config, store, logger }).fetch,
+      // Match src/server.ts: without this the server's request timeout can
+      // close the socket while a slow provider is still evaluating the prompt.
+      idleTimeout: 255,
+    });
 
     const weatherProc = spawn({
-      cmd: ["bun", "examples/weather-app/src/server.ts"],
+      cmd: [process.execPath, "examples/weather-app/src/server.ts"],
       env: {
         ...process.env,
         WEATHER_PORT: "0",

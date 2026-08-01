@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { Hono } from "hono";
 import { generateToken, constantTimeEqual, bearerAuth } from "../../src/auth.ts";
 

@@ -1,12 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
 import { invokeApiCallTool } from "../../src/agent/tools.ts";
 import type { Tool } from "../../src/registry/schema.ts";
+import { setTimeout as sleep } from "node:timers/promises";
+import { listen } from "../helpers/listen.ts";
 
 function spinUp(handler: (c: any) => Response | Promise<Response>) {
   const app = new Hono();
   app.all("*", (c) => handler(c));
-  return Bun.serve({ port: 0, fetch: app.fetch });
+  return listen({ port: 0, fetch: app.fetch });
 }
 
 const SAMPLE_TOOL: Tool = {
@@ -109,7 +111,7 @@ describe("invokeApiCallTool", () => {
     let calls = 0;
     const server = spinUp(async () => {
       calls++;
-      await Bun.sleep(200);
+      await sleep(200);
       return Response.json({});
     });
     try {
