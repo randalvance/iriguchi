@@ -21,7 +21,43 @@ const ApiCallTool = z.object({
   timeout_ms: z.number().int().positive().optional(),
 });
 
-export const ToolSchema = z.discriminatedUnion("type", [ApiCallTool]);
+/**
+ * A reference to an external MCP server, not a tool declaration.
+ *
+ * Every other member of {@link ToolSchema} describes exactly one tool. This one
+ * describes a server the gateway dials out to, and expands at run time into
+ * however many tools that server advertises via `tools/list`. Anything walking
+ * an agent's `tools` array therefore has to expand before counting.
+ *
+ * `name` deliberately excludes `_` so the `<name>__<tool>` exposed form can be
+ * split back apart on its first `__`.
+ */
+const McpServerTool = z.object({
+  type: z.literal("mcp"),
+  name: z
+    .string()
+    .min(1)
+    .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, "mcp server name must be kebab-case"),
+  url: z.string().refine(
+    (u) => {
+      let parsed: URL;
+      try {
+        parsed = new URL(u);
+      } catch {
+        return false;
+      }
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    },
+    { message: "url must be an absolute http or https URL" },
+  ),
+  headers: z.record(z.string(), z.string()).default({}),
+  // Absent means expose everything discovered; an empty array means expose
+  // nothing, which is a valid way to park a server without removing it.
+  tools: z.array(z.string().min(1)).optional(),
+  timeout_ms: z.number().int().positive().optional(),
+});
+
+export const ToolSchema = z.discriminatedUnion("type", [ApiCallTool, McpServerTool]);
 
 const SkillSchema = z
   .object({
@@ -84,4 +120,6 @@ export const ManifestSchema = z
 export type Manifest = z.infer<typeof ManifestSchema>;
 export type Agent = z.infer<typeof AgentSchema>;
 export type Tool = z.infer<typeof ToolSchema>;
+export type ApiCallTool = Extract<Tool, { type: "api_call" }>;
+export type McpServerTool = Extract<Tool, { type: "mcp" }>;
 export type Skill = z.infer<typeof SkillSchema>;

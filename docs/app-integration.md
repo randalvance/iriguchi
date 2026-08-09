@@ -60,7 +60,7 @@ Validated against a strict schema (`src/registry/schema.ts`); the whole manifest
                                             // Omit to use the gateway's default provider.
       "tools": [
         {
-          "type": "api_call",               // only supported tool type today
+          "type": "api_call",               // call back into this app over HTTP
           "name": "get_thing",
           "description": "Fetches a thing. The model reads this to decide when to call it.",
           "parameters": {                   // JSON Schema for the tool's input
@@ -70,6 +70,14 @@ Validated against a strict schema (`src/registry/schema.ts`); the whole manifest
           },
           "endpoint": { "method": "POST", "path": "/api/thing" },  // path is relative to your base_url
           "timeout_ms": 10000               // optional; defaults to the gateway's IRI_TOOL_CALL_TIMEOUT_MS
+        },
+        {
+          "type": "mcp",                    // an external MCP server the gateway dials OUT to
+          "name": "finance",                // kebab-case; becomes the tool prefix, so no underscores
+          "url": "http://finance-mcp:8080/mcp",
+          "headers": { "X-Example": "v" },  // optional; sent on every request to that server
+          "tools": ["list_accounts"],       // optional allowlist; omit to expose everything discovered
+          "timeout_ms": 30000               // optional; defaults to IRI_TOOL_CALL_TIMEOUT_MS
         }
       ],
       "skills": [
@@ -81,6 +89,14 @@ Validated against a strict schema (`src/registry/schema.ts`); the whole manifest
   ]
 }
 ```
+
+Notes on `mcp` tools:
+- An `mcp` entry is a **reference to a server, not a tool**. It expands into however many tools that server advertises via `tools/list`, so unlike `api_call`, the number of entries in `tools` is not the number of tools the model sees.
+- Tools arrive at the model prefixed: `finance__list_accounts`. That is why `name` must be kebab-case — the first `__` is the separator.
+- Registration validates the entry's shape but **does not connect**. A server that is down at registration time is fine; its tools appear on the first run after it comes back. A typo'd URL, by contrast, will not surface until then either.
+- If the gateway sets `IRI_MCP_ALLOWED_ORIGINS`, a URL outside that allowlist fails registration with `400 mcp_origin_not_allowed`.
+- Failures never abort a run. A dead server costs its own tools; a failing tool call reaches the model as an error payload it can react to.
+- See the [MCP section of the README](../README.md#mcp-servers) for discovery, caching, and what is deliberately not supported.
 
 Notes on models and providers:
 - `default_model` is passed through verbatim — write it in the form the agent's provider expects (`claude-opus-5` for Anthropic direct, `moonshotai/kimi-k3` for OpenRouter's Anthropic endpoint, a local id like `ornith-1.0-35b` for LM Studio).

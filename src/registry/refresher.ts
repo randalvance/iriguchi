@@ -2,6 +2,8 @@ import { fetchManifest, ManifestFetchError } from "./manifest.ts";
 import type { Store } from "./store.ts";
 import type { Logger } from "../logger.ts";
 import type { Config } from "../config.ts";
+import type { McpRuntime } from "../agent/mcp/discovery.ts";
+import { refreshStaleMcpTools } from "../agent/mcp/refresh.ts";
 
 export type RefresherHandle = { stop(): void };
 
@@ -11,6 +13,8 @@ export function startBackgroundRefresh(opts: {
   ttlMs: number;
   intervalMs: number;
   config: Pick<Config, "providers">;
+  /** Omit to refresh manifests only. */
+  mcp?: McpRuntime;
 }): RefresherHandle {
   const tick = async () => {
     const now = Date.now();
@@ -47,6 +51,9 @@ export function startBackgroundRefresh(opts: {
           err: err instanceof ManifestFetchError ? err.message : String(err),
         });
       }
+    }
+    if (opts.mcp) {
+      await refreshStaleMcpTools(opts.mcp);
     }
   };
   const t = setInterval(() => {
