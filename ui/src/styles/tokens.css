@@ -1,0 +1,172 @@
+/*
+ * iriguchi design tokens — dark only.
+ *
+ * This file is the single layer that carries a visual decision. Every other
+ * stylesheet and every component consumes these variables and hardcodes
+ * nothing: no hex, no px spacing, no font stack, no duration. If a value is
+ * not here, it does not exist.
+ *
+ * There is deliberately no light theme and no `prefers-color-scheme` block.
+ * The tokens are named semantically (--surface-2, --status-stale) rather than
+ * literally (--gray-800, --amber), so adding a light mode later is a matter of
+ * redefining this file under a selector — not of touching component CSS.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ---------------------------------------------------------------- color */
+
+  /* Surfaces. Elevation in a dark UI reads through lightness, not shadow:
+     each step up is a lighter surface, and shadows only separate overlays
+     from the page. */
+  --bg: #0b0d10;              /* page canvas */
+  --surface-1: #121519;       /* cards, panels, sidebar */
+  --surface-2: #181c22;       /* inputs, raised rows, user chat bubble */
+  --surface-3: #20252c;       /* hover, popovers, active nav */
+  --surface-inset: #090b0d;   /* code blocks, wells — recessed, not raised */
+
+  /* Borders. --border is the default hairline; --border-strong is for
+     elements that must read as interactive at rest (inputs, buttons). */
+  --border: #262c34;
+  --border-strong: #333b45;
+  --border-accent: #e8583c;
+
+  /* Text. Four levels, all AA against --bg through --surface-2.
+     --text-subtle is the floor: do not go dimmer, and do not use it on
+     --surface-3 or lighter. */
+  --text: #e8ecf1;            /* 16.4:1 on --bg */
+  --text-muted: #a0a9b4;      /*  8.2:1 */
+  --text-subtle: #868f9b;     /*  5.9:1 */
+  --text-inverse: #0b0d10;    /* on accent and status fills */
+
+  /* Accent — vermilion, for the torii gate the name points at.
+     Reserved for interaction: links, focus, primary actions, active nav.
+     Never used to express health; that is what --status-* is for. */
+  --accent: #e8583c;          /*  5.5:1 on --bg — safe as text */
+  --accent-hover: #f26a4e;
+  --accent-active: #d9502f;
+  --accent-muted: #a83c28;    /* borders and rules that must recede */
+  --accent-tint: color-mix(in oklab, var(--accent) 12%, transparent);
+  --accent-tint-strong: color-mix(in oklab, var(--accent) 20%, transparent);
+
+  /* Status. The four MCP connection states, plus a neutral. These are the
+     only colors allowed to carry meaning, and each is paired with a shape or
+     a word in the UI so color is never the sole signal. */
+  --status-ok: #4ade80;
+  --status-stale: #fbbf24;
+  --status-unreachable: #f87171;
+  --status-unknown: #8a93a2;   /* desaturated on purpose: absence of signal */
+  --status-neutral: #a0a9b4;
+
+  --status-ok-tint: color-mix(in oklab, var(--status-ok) 14%, transparent);
+  --status-stale-tint: color-mix(in oklab, var(--status-stale) 14%, transparent);
+  --status-unreachable-tint: color-mix(in oklab, var(--status-unreachable) 14%, transparent);
+  --status-unknown-tint: color-mix(in oklab, var(--status-unknown) 14%, transparent);
+
+  /* Selection and overlay scrim. */
+  --selection-bg: color-mix(in oklab, var(--accent) 32%, transparent);
+  --scrim: rgb(0 0 0 / 0.62);
+
+  /* ----------------------------------------------------------- typography */
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter,
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* Scale. The app runs at 14px (--text-base); 16px (--text-md) is reserved
+     for chat message prose, which is read rather than scanned. */
+  --text-2xs: 0.6875rem;  /* 11px — uppercase eyebrow labels only */
+  --text-xs: 0.75rem;     /* 12px — metadata, timestamps, table headers */
+  --text-sm: 0.8125rem;   /* 13px — dense secondary text, tags */
+  --text-base: 0.875rem;  /* 14px — app default */
+  --text-md: 1rem;        /* 16px — chat prose */
+  --text-lg: 1.125rem;    /* 18px — card titles */
+  --text-xl: 1.375rem;    /* 22px — page titles */
+  --text-2xl: 1.75rem;    /* 28px — the one hero size */
+
+  --leading-none: 1;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;  /* chat transcripts */
+
+  /* 700 is omitted: heavy weights bloom against dark backgrounds. Emphasis
+     comes from 600 plus a brighter text token. */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  --tracking-wide: 0.06em;   /* pairs with --text-2xs uppercase */
+  --tracking-tight: -0.01em; /* pairs with --text-xl and up */
+
+  /* -------------------------------------------------------------- spacing */
+
+  /* 4px base. Component padding composes from these; no arbitrary values. */
+  --space-0: 0;
+  --space-1: 0.25rem;   /*  4 */
+  --space-2: 0.5rem;    /*  8 */
+  --space-3: 0.75rem;   /* 12 */
+  --space-4: 1rem;      /* 16 */
+  --space-5: 1.25rem;   /* 20 */
+  --space-6: 1.5rem;    /* 24 */
+  --space-8: 2rem;      /* 32 */
+  --space-10: 2.5rem;   /* 40 */
+  --space-12: 3rem;     /* 48 */
+  --space-16: 4rem;     /* 64 */
+
+  /* --------------------------------------------------------------- shape */
+
+  --radius-sm: 4px;    /* tags, inline chips */
+  --radius-md: 6px;    /* buttons, inputs */
+  --radius-lg: 10px;   /* cards, chat bubbles */
+  --radius-xl: 14px;   /* modals, the composer */
+  --radius-full: 999px;
+
+  --border-width: 1px;
+
+  /* ----------------------------------------------------------- elevation */
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.6);
+
+  --focus-width: 2px;
+  --focus-offset: 2px;
+  --focus-color: var(--accent);
+
+  /* --------------------------------------------------------------- motion */
+
+  --duration-fast: 120ms;   /* hover, focus, color changes */
+  --duration-base: 180ms;   /* disclosure, tab switches */
+  --duration-slow: 280ms;   /* panel entrance */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* --------------------------------------------------------------- layout */
+
+  --container-max: 1280px;
+  --sidebar-width: 264px;
+  --header-height: 52px;
+  --measure: 68ch;   /* chat reading measure */
+
+  /* ---------------------------------------------------------------- depth */
+
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-dropdown: 100;
+  --z-overlay: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+}
+
+/* Motion tokens collapse rather than being conditionally applied at each
+   call site, so honoring the preference is not something a component can
+   forget to do. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+}
