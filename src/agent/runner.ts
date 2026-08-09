@@ -4,7 +4,8 @@ import type { Config, Provider } from "../config.ts";
 import type { Store, AgentLookup } from "../registry/store.ts";
 import type { Tool, Agent } from "../registry/schema.ts";
 import { materializeSkills } from "./skills.ts";
-import { invokeApiCallTool } from "./tools.ts";
+import { invokeTool } from "./tools.ts";
+import { expandAgentTools, type McpRuntime, type ResolvedMcpTool } from "./mcp/discovery.ts";
 import { jsonSchemaToZodRawShape } from "./json-schema-to-zod.ts";
 import {
   translateSdkEvent,
@@ -73,6 +74,12 @@ export type RunnerOpts = {
   >;
   store: Store;
   request: ChatRequest;
+  /**
+   * Shared MCP connection pool and tool cache. Absent means the gateway runs
+   * with no MCP support at all, and `mcp` entries in a manifest contribute
+   * nothing — the shape a caller that predates MCP still gets.
+   */
+  mcp?: McpRuntime;
 };
 
 /**
@@ -139,46 +146,77 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<OpenAIChunk> {
     skills: agent?.skills ?? [],
   });
 
-  const mcpTools = (agent?.tools ?? []).map((t) => {
-    const paramShape = jsonSchemaToZodRawShape(
-      t.parameters as Record<string, unknown>,
-    );
-    return tool(
-      t.name,
-      t.description,
-      paramShape,
-      async (args: Record<string, unknown>) => {
-        if (!lookup) {
-          throw new Error("internal: tool handler invoked without app lookup");
-        }
-        try {
-          const result = await invokeApiCallTool({
-            tool: t as Tool,
-            baseUrl: lookup.app.base_url,
-            appToken: lookup.app.app_token,
-            input: args,
-            defaultTimeoutMs: config.toolCallTimeoutMs,
-          });
-          return {
-            content: [{ type: "text", text: JSON.stringify(result) }],
-          };
-        } catch (err) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ error: (err as Error).message }),
-              },
-            ],
-          };
-        }
-      },
-    );
+  // `api_call` entries are one tool each; each `mcp` entry fans out into
+  // whatever its server advertises, so the declared array is not the exposed
+  // one. Discovery never throws — an unreachable server contributes no tools
+  // and the run proceeds with the rest.
+  const { apiCallTools, mcpTools } = opts.mcp
+    ? await expandAgentTools(agent?.tools ?? [], opts.mcp)
+    : {
+        apiCallTools: (agent?.tools ?? []).filter((t) => t.type === "api_call"),
+        mcpTools: [] as ResolvedMcpTool[],
+      };
+
+  /** Both transports return the same contract, so results are wrapped alike. */
+  const asToolResult = (result: unknown) => ({
+    content: [{ type: "text" as const, text: JSON.stringify(result) }],
   });
+  const asToolError = (err: unknown) =>
+    asToolResult({ error: { message: (err as Error).message } });
+
+  const sdkTools = [
+    ...apiCallTools.map((t) =>
+      tool(
+        t.name,
+        t.description,
+        jsonSchemaToZodRawShape(t.parameters as Record<string, unknown>),
+        async (args: Record<string, unknown>) => {
+          if (!lookup) {
+            throw new Error("internal: tool handler invoked without app lookup");
+          }
+          try {
+            return asToolResult(
+              await invokeTool({
+                tool: t as Tool,
+                baseUrl: lookup.app.base_url,
+                appToken: lookup.app.app_token,
+                input: args,
+                defaultTimeoutMs: config.toolCallTimeoutMs,
+              }),
+            );
+          } catch (err) {
+            return asToolError(err);
+          }
+        },
+      ),
+    ),
+    ...mcpTools.map((t) =>
+      tool(
+        t.exposedName,
+        t.description,
+        jsonSchemaToZodRawShape(t.inputSchema),
+        async (args: Record<string, unknown>) => {
+          try {
+            return asToolResult(
+              await invokeTool({
+                tool: t.entry,
+                toolName: t.toolName,
+                input: args,
+                defaultTimeoutMs: config.toolCallTimeoutMs,
+                mcp: opts.mcp,
+              }),
+            );
+          } catch (err) {
+            return asToolError(err);
+          }
+        },
+      ),
+    ),
+  ];
 
   const mcpServer =
-    mcpTools.length > 0
-      ? createSdkMcpServer({ name: "iriguchi-app-tools", version: "1.0.0", tools: mcpTools })
+    sdkTools.length > 0
+      ? createSdkMcpServer({ name: "iriguchi-app-tools", version: "1.0.0", tools: sdkTools })
       : undefined;
 
   for (const c of translateSdkEvent({ type: "stream_start" }, tCtx)) {
@@ -202,7 +240,10 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<OpenAIChunk> {
     sdkOptions.mcpServers = { app: mcpServer };
     // App tools are gateway-owned; grant them explicitly or the CLI's
     // permission model denies every mcp__app__* call in headless mode.
-    sdkOptions.allowedTools = (agent?.tools ?? []).map((t) => `mcp__app__${t.name}`);
+    sdkOptions.allowedTools = [
+      ...apiCallTools.map((t) => `mcp__app__${t.name}`),
+      ...mcpTools.map((t) => `mcp__app__${t.exposedName}`),
+    ];
   }
 
   const sdkStream = query({ prompt, options: sdkOptions as any });

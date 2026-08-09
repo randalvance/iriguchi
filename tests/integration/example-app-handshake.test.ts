@@ -19,6 +19,8 @@ describe("example app handshake", () => {
       maxAgentTurns: 5,
       toolCallTimeoutMs: 2000,
       manifestCacheTtlMs: 60_000,
+      mcpCacheTtlMs: 300_000,
+      mcpAllowedOrigins: [] as string[],
       requestTimeoutMs: 5000,
       dbPath: ":memory:",
       tmpDir: "./.iri-tmp-example",

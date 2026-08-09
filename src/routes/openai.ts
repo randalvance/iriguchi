@@ -5,9 +5,15 @@ import type { Config } from "../config.ts";
 import type { Store } from "../registry/store.ts";
 import type { Logger } from "../logger.ts";
 import { runAgentStream, runAgentChunks, GatewayError } from "../agent/runner.ts";
+import type { McpRuntime } from "../agent/mcp/discovery.ts";
 import { aggregateChunks, type OpenAIChunk } from "../agent/openai-sse.ts";
 
-export function openaiRoutes(deps: { config: Config; store: Store; logger: Logger }) {
+export function openaiRoutes(deps: {
+  config: Config;
+  store: Store;
+  logger: Logger;
+  mcp?: McpRuntime;
+}) {
   const app = new Hono();
   app.use("*", bearerAuth({ tokens: [deps.config.apiKey] }));
 
@@ -81,6 +87,7 @@ export function openaiRoutes(deps: { config: Config; store: Store; logger: Logge
     const runnerOpts = {
       config: deps.config,
       store: deps.store,
+      mcp: deps.mcp,
       request: {
         requestId,
         agentId: typeof body.iri_agent === "string" ? body.iri_agent : null,

@@ -1,5 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Tool } from "../registry/schema.ts";
+import type { McpRuntime } from "./mcp/discovery.ts";
+import { invokeMcpTool } from "./mcp/invoke.ts";
 
 export type ToolInvocationResult = unknown; // either app's JSON or { error: { ... } }
 
@@ -92,4 +94,54 @@ export async function invokeApiCallTool(opts: {
     return { error: { kind: attempt.kind, message: attempt.message } };
   }
   return { error: { status: attempt.status, body: attempt.body } };
+}
+
+/**
+ * Route a tool call to the transport its declaration implies.
+ *
+ * `api_call` reaches back into the app that registered the tool; `mcp` reaches
+ * out to a server the gateway does not own. Both return the same result
+ * contract — data, or `{ error: { ... } }` — so callers do not branch on
+ * transport.
+ */
+export async function invokeTool(opts: {
+  tool: Tool;
+  /** The tool's own name with any server prefix stripped; `mcp` tools only. */
+  toolName?: string;
+  baseUrl?: string;
+  appToken?: string;
+  input: Record<string, unknown>;
+  defaultTimeoutMs: number;
+  mcp?: McpRuntime;
+}): Promise<ToolInvocationResult> {
+  if (opts.tool.type === "api_call") {
+    if (opts.baseUrl === undefined || opts.appToken === undefined) {
+      throw new Error("internal: api_call tool invoked without app base_url and token");
+    }
+    return invokeApiCallTool({
+      tool: opts.tool,
+      baseUrl: opts.baseUrl,
+      appToken: opts.appToken,
+      input: opts.input,
+      defaultTimeoutMs: opts.defaultTimeoutMs,
+    });
+  }
+
+  if (opts.tool.type === "mcp") {
+    if (!opts.mcp) {
+      throw new Error("internal: mcp tool invoked without an mcp runtime");
+    }
+    if (!opts.toolName) {
+      throw new Error("internal: mcp tool invoked without a resolved tool name");
+    }
+    return invokeMcpTool({
+      entry: opts.tool,
+      toolName: opts.toolName,
+      input: opts.input,
+      defaultTimeoutMs: opts.defaultTimeoutMs,
+      rt: opts.mcp,
+    });
+  }
+
+  throw new Error(`unsupported tool type: ${(opts.tool as { type: string }).type}`);
 }

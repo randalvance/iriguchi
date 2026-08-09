@@ -21,6 +21,14 @@ export type Config = {
   toolCallTimeoutMs: number;
   manifestCacheTtlMs: number;
   requestTimeoutMs: number;
+  mcpCacheTtlMs: number;
+  /**
+   * Origins an agent manifest may name in an `mcp` entry, normalized to
+   * `scheme://host[:port]`. Empty means unrestricted — MCP URLs arrive from
+   * registering apps, so this is the only bound on where the gateway will dial
+   * out to, but requiring it would break every deployment that predates it.
+   */
+  mcpAllowedOrigins: string[];
   dbPath: string;
   tmpDir: string;
   providers: Record<string, Provider>;
@@ -41,6 +49,47 @@ function intVar(env: Record<string, string | undefined>, key: string, fallback: 
     throw new Error(`Invalid integer for ${key}: ${raw}`);
   }
   return n;
+}
+
+/**
+ * Parse a comma-separated origin allowlist. Entries are normalized through
+ * `URL` so that `http://Host:80/path` and `http://host` compare equal to the
+ * origin of a declared MCP URL.
+ */
+function parseAllowedOrigins(raw: string | undefined): string[] {
+  if (!raw) return [];
+  const out: string[] = [];
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      throw new Error(
+        `invalid entry in IRI_MCP_ALLOWED_ORIGINS: "${trimmed}"; expected an absolute URL such as http://host:8080`,
+      );
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(
+        `invalid scheme in IRI_MCP_ALLOWED_ORIGINS entry "${trimmed}": only http and https are supported`,
+      );
+    }
+    if (!out.includes(parsed.origin)) out.push(parsed.origin);
+  }
+  return out;
+}
+
+export function isOriginAllowed(url: string, allowedOrigins: string[]): boolean {
+  // A missing allowlist means unrestricted, same as an empty one. Guarding
+  // rather than trusting the type keeps a partially-built config from turning
+  // an origin check into a crash on the registration path.
+  if (!allowedOrigins || allowedOrigins.length === 0) return true;
+  try {
+    return allowedOrigins.includes(new URL(url).origin);
+  } catch {
+    return false;
+  }
 }
 
 function loadProviders(env: Record<string, string | undefined>): Record<string, Provider> {
@@ -138,6 +187,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     toolCallTimeoutMs: intVar(env, "IRI_TOOL_CALL_TIMEOUT_MS", 30000),
     manifestCacheTtlMs: intVar(env, "IRI_MANIFEST_CACHE_TTL_MS", 300000),
     requestTimeoutMs: intVar(env, "IRI_REQUEST_TIMEOUT_MS", 300000),
+    mcpCacheTtlMs: intVar(env, "IRI_MCP_CACHE_TTL_MS", 300000),
+    mcpAllowedOrigins: parseAllowedOrigins(env.IRI_MCP_ALLOWED_ORIGINS),
     dbPath: env.IRI_DB_PATH || "./iriguchi.db",
     tmpDir: env.IRI_TMP_DIR || "./.iri-tmp",
     providers,

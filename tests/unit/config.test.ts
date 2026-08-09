@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadConfig } from "../../src/config.ts";
+import { loadConfig, isOriginAllowed } from "../../src/config.ts";
 
 const baseEnv = () => ({
   IRI_API_KEY: "client-key",
@@ -200,5 +200,77 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...baseEnv(), IRI_PORT: "not-a-number" })).toThrow(
       /IRI_PORT/,
     );
+  });
+});
+
+describe("loadConfig — MCP settings", () => {
+  it("defaults the cache TTL to five minutes and the allowlist to unrestricted", () => {
+    const cfg = loadConfig(baseEnv());
+    expect(cfg.mcpCacheTtlMs).toBe(300000);
+    expect(cfg.mcpAllowedOrigins).toEqual([]);
+  });
+
+  it("reads an overridden cache TTL", () => {
+    const cfg = loadConfig({ ...baseEnv(), IRI_MCP_CACHE_TTL_MS: "60000" });
+    expect(cfg.mcpCacheTtlMs).toBe(60000);
+  });
+
+  it("parses and normalizes a comma-separated allowlist to origins", () => {
+    const cfg = loadConfig({
+      ...baseEnv(),
+      IRI_MCP_ALLOWED_ORIGINS:
+        "http://finance-mcp.finance-app.svc.cluster.local:8080/mcp, https://Example.COM ",
+    });
+    expect(cfg.mcpAllowedOrigins).toEqual([
+      "http://finance-mcp.finance-app.svc.cluster.local:8080",
+      "https://example.com",
+    ]);
+  });
+
+  it("treats an empty-string allowlist as unrestricted", () => {
+    const cfg = loadConfig({ ...baseEnv(), IRI_MCP_ALLOWED_ORIGINS: "" });
+    expect(cfg.mcpAllowedOrigins).toEqual([]);
+  });
+
+  it("ignores empty entries and deduplicates origins", () => {
+    const cfg = loadConfig({
+      ...baseEnv(),
+      IRI_MCP_ALLOWED_ORIGINS: "http://a:80,,http://a/other,",
+    });
+    expect(cfg.mcpAllowedOrigins).toEqual(["http://a"]);
+  });
+
+  it("throws on an unparseable allowlist entry", () => {
+    expect(() =>
+      loadConfig({ ...baseEnv(), IRI_MCP_ALLOWED_ORIGINS: "not a url" }),
+    ).toThrow(/IRI_MCP_ALLOWED_ORIGINS/);
+  });
+
+  it("throws on a non-http scheme in the allowlist", () => {
+    expect(() =>
+      loadConfig({ ...baseEnv(), IRI_MCP_ALLOWED_ORIGINS: "ftp://example.com" }),
+    ).toThrow(/IRI_MCP_ALLOWED_ORIGINS/);
+  });
+});
+
+describe("isOriginAllowed", () => {
+  it("permits anything when the allowlist is empty", () => {
+    expect(isOriginAllowed("http://anywhere.example/mcp", [])).toBe(true);
+  });
+
+  it("permits a URL whose origin is listed, regardless of path", () => {
+    expect(isOriginAllowed("http://a:8080/mcp", ["http://a:8080"])).toBe(true);
+  });
+
+  it("refuses a URL whose origin is not listed", () => {
+    expect(isOriginAllowed("http://evil.example/mcp", ["http://a:8080"])).toBe(false);
+  });
+
+  it("refuses a URL differing only by port", () => {
+    expect(isOriginAllowed("http://a:9090/mcp", ["http://a:8080"])).toBe(false);
+  });
+
+  it("refuses an unparseable URL when an allowlist is set", () => {
+    expect(isOriginAllowed("not a url", ["http://a:8080"])).toBe(false);
   });
 });

@@ -25,6 +25,8 @@ const baseCfg = () => ({
   maxAgentTurns: 5,
   toolCallTimeoutMs: 1000,
   manifestCacheTtlMs: 1000,
+  mcpCacheTtlMs: 300_000,
+  mcpAllowedOrigins: [],
   requestTimeoutMs: 5000,
   dbPath: ":memory:",
   tmpDir: tmp,

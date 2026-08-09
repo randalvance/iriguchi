@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { bearerAuth, generateToken } from "../auth.ts";
 import { fetchManifest, ManifestFetchError } from "../registry/manifest.ts";
 import type { Config } from "../config.ts";
+import { isOriginAllowed } from "../config.ts";
 import type { Store } from "../registry/store.ts";
 import type { Logger } from "../logger.ts";
 import type { Manifest } from "../registry/schema.ts";
@@ -18,6 +19,44 @@ export function registrationRoutes(deps: { config: Config; store: Store; logger:
       }
     }
     return { ok: true };
+  }
+
+  /**
+   * The origin check the schema cannot do: `ToolSchema` already rejects a
+   * malformed or non-HTTP `url`, but the allowlist is gateway config rather
+   * than manifest content.
+   *
+   * Deliberately does not connect. An `mcp` entry is a reference, so its tool
+   * surface is unknown until a run needs it; a server that happens to be down
+   * at registration time is not a registration failure.
+   */
+  function validateMcpEntries(
+    manifest: Manifest,
+  ): { ok: true } | { ok: false; agentId: string; server: string; url: string } {
+    if (!deps.config.mcpAllowedOrigins?.length) return { ok: true };
+    for (const a of manifest.agents) {
+      for (const t of a.tools) {
+        if (t.type !== "mcp") continue;
+        if (!isOriginAllowed(t.url, deps.config.mcpAllowedOrigins)) {
+          return { ok: false, agentId: a.id, server: t.name, url: t.url };
+        }
+      }
+    }
+    return { ok: true };
+  }
+
+  function disallowedMcpOriginResponse(check: {
+    agentId: string;
+    server: string;
+    url: string;
+  }) {
+    return {
+      error: {
+        type: "invalid_request_error",
+        code: "mcp_origin_not_allowed",
+        message: `agent "${check.agentId}" declares mcp server "${check.server}" at url "${check.url}", whose origin is not permitted; allowed origins: [${deps.config.mcpAllowedOrigins.join(", ")}]`,
+      },
+    };
   }
 
   function unknownProviderResponse(check: { agentId: string; provider: string }) {
@@ -94,6 +133,10 @@ export function registrationRoutes(deps: { config: Config; store: Store; logger:
         if (!check.ok) {
           return c.json(unknownProviderResponse(check), 400);
         }
+        const mcpCheck = validateMcpEntries(manifest);
+        if (!mcpCheck.ok) {
+          return c.json(disallowedMcpOriginResponse(mcpCheck), 400);
+        }
         deps.store.upsertApp({ id: body.id, base_url: body.base_url, app_token: appToken, manifest });
         deps.logger.info("app.register", { app_id: body.id, base_url: body.base_url, agents: manifest.agents.map((a) => a.id) });
         return c.json({ app_token: appToken, accepted_agents: manifest.agents.map((a) => a.id) }, 201);
@@ -124,6 +167,10 @@ export function registrationRoutes(deps: { config: Config; store: Store; logger:
       const check = validateProviders(manifest);
       if (!check.ok) {
         return c.json(unknownProviderResponse(check), 400);
+      }
+      const mcpCheck = validateMcpEntries(manifest);
+      if (!mcpCheck.ok) {
+        return c.json(disallowedMcpOriginResponse(mcpCheck), 400);
       }
       deps.store.upsertApp({ id, base_url: stored.base_url, app_token: stored.app_token, manifest });
       deps.logger.info("manifest.fetch", { app_id: id, agents: manifest.agents.length });

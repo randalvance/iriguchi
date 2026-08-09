@@ -115,6 +115,54 @@ curl http://localhost:4000/v1/chat/completions \
   }'
 ```
 
+## MCP servers
+
+An agent can reach tools served by an external [MCP](https://modelcontextprotocol.io) server, not only the `api_call` endpoints its own app exposes. Note the direction: `api_call` tools are ones an app pushes at the gateway for the gateway to call back into, while an MCP server is one the gateway dials *out* to and discovers tools from.
+
+Declare a server in the agent's `tools` array with `type: "mcp"`:
+
+```json
+{
+  "type": "mcp",
+  "name": "finance",
+  "url": "http://finance-mcp.finance-app.svc.cluster.local:8080/mcp",
+  "headers": { "X-Example": "value" },
+  "tools": ["list_accounts", "get_transaction"],
+  "timeout_ms": 30000
+}
+```
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `name` | yes | — | Kebab-case. Becomes the tool prefix, so it cannot contain `_`. |
+| `url` | yes | — | Absolute `http`/`https` URL of the streamable-HTTP endpoint. |
+| `headers` | no | `{}` | Sent on every request to that server. |
+| `tools` | no | all | Allowlist of tool names to expose. `[]` parks the server without removing it. |
+| `timeout_ms` | no | `IRI_TOOL_CALL_TIMEOUT_MS` | Per-call bound. |
+
+**One entry, many tools.** Every other kind of tool declaration describes exactly one tool. An `mcp` entry is a *reference*: its tools are unknown until the gateway connects, and it expands into however many the server advertises. Registration therefore validates the entry's shape but does not connect, so a server that happens to be down does not fail a registration.
+
+**Names are prefixed.** A tool arrives at the model as `<server>__<tool>` — `finance__list_accounts` — which is why server names exclude `_`: the first `__` is unambiguously the separator. Prefixing makes collisions with `api_call` names impossible by construction; a discovered tool whose prefixed name is over 64 characters, contains anything outside `[A-Za-z0-9_-]`, or is already claimed on that agent is dropped with a `warn` rather than failing the run.
+
+**Discovery is lazy.** The gateway connects and calls `tools/list` the first time a run needs a server, never at boot, and caches the result for `IRI_MCP_CACHE_TTL_MS`. Stale entries refresh on the same background tick that refreshes app manifests. Two agents naming the same URL and headers share one connection and one cache entry.
+
+**Failure degrades rather than aborts.** An unreachable server costs its own tools and nothing else — the run continues with whatever else the agent has, and an agent whose only server is down still answers. A server that was reachable once keeps serving its last known tool list until a re-list succeeds. Tool failures reach the model as data in the same result shape `api_call` failures use, so a run is never aborted by one.
+
+### Configuration
+
+```bash
+IRI_MCP_CACHE_TTL_MS=300000
+IRI_MCP_ALLOWED_ORIGINS=http://finance-mcp.finance-app.svc.cluster.local:8080
+```
+
+`IRI_MCP_ALLOWED_ORIGINS` is a comma-separated origin allowlist. It matters because MCP URLs arrive from registering apps, so without it a registration can point the gateway at any host it names. It is enforced at registration *and* again at connect time, so tightening it takes effect against manifests already in the store. Unset or empty means unrestricted.
+
+### Not supported
+
+- **Authentication beyond static `headers`.** No credential store, no OAuth, no token refresh. The `headers` field exists so a server that wants a bearer token can have one, but nothing manages its lifecycle.
+- **`listChanged` notifications.** A server may advertise the capability, but a stateless HTTP transport has no channel to deliver one. The TTL is the only invalidation, so a newly added tool is invisible for up to one cache period.
+- **Non-HTTP transports.** Streamable HTTP only — no stdio, no local servers.
+
 ## Tests
 
 ```bash
@@ -156,7 +204,8 @@ src/
 ├── routes/registration.ts  # /apps/* — register, refresh, delete
 ├── agent/
 │   ├── runner.ts           # Wraps Claude Agent SDK query()
-│   ├── tools.ts            # api_call tool → HTTP
+│   ├── tools.ts            # Dispatch by tool type; api_call → HTTP
+│   ├── mcp/                # MCP client: pool, tool cache, discovery, invoke
 │   ├── skills.ts           # Materialize skills to tempdir
 │   ├── openai-sse.ts       # SDK events → OpenAI SSE chunks
 │   └── json-schema-to-zod.ts  # JSON Schema → ZodRawShape for SDK tools
