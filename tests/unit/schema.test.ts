@@ -230,3 +230,69 @@ describe("ManifestSchema — mcp tool entries", () => {
     expect(() => ManifestSchema.parse(withMcp({ url: "https://example.com/mcp" }))).not.toThrow();
   });
 });
+
+/** Put a `when` clause on the manifest's `api_call` tool. */
+function withWhen(when: unknown) {
+  const m = structuredClone(VALID_MANIFEST);
+  (m.agents[0].tools[0] as any).when = when;
+  return m;
+}
+
+describe("ManifestSchema — when clauses", () => {
+  it("accepts a manifest with no when clauses at all", () => {
+    const parsed = ManifestSchema.parse(VALID_MANIFEST);
+    expect((parsed.agents[0].tools[0] as any).when).toBeUndefined();
+  });
+
+  it.each([
+    ["scalar string", { route: "/imports/preview" }],
+    ["scalar number", { count: 47 }],
+    ["scalar boolean", { live: true }],
+    ["array membership", { route: ["/imports/preview", "/imports/review"] }],
+    ["prefix", { route: { prefix: "/accounts/" } }],
+    ["exists", { import_batch_id: { exists: true } }],
+    ["multiple entries", { route: "/x", batch: { exists: true } }],
+    ["nested path key", { "screen.name": "preview" }],
+  ])("accepts a %s matcher", (_label, when) => {
+    const parsed = ManifestSchema.parse(withWhen(when));
+    expect((parsed.agents[0].tools[0] as any).when).toEqual(when);
+  });
+
+  it("accepts a when clause on an mcp entry", () => {
+    const parsed = ManifestSchema.parse(withMcp({ when: { route: { prefix: "/accounts/" } } }));
+    const tool = parsed.agents[0].tools[0];
+    if (tool.type !== "mcp") throw new Error("expected mcp tool");
+    expect(tool.when).toEqual({ route: { prefix: "/accounts/" } });
+  });
+
+  it("rejects an empty clause, which reads as a restriction but never restricts", () => {
+    expect(() => ManifestSchema.parse(withWhen({}))).toThrow(/at least one path/i);
+  });
+
+  it("rejects an empty path key", () => {
+    expect(() => ManifestSchema.parse(withWhen({ "": "x" }))).toThrow();
+  });
+
+  it.each([
+    ["an unrecognized matcher form", { route: { regex: "^/acc" } }],
+    ["a matcher with an extra key", { route: { prefix: "/a", exists: true } }],
+    ["a non-object clause", "route=/imports/preview"],
+    ["an array clause", [{ route: "/x" }]],
+    ["a null matcher", { route: null }],
+    ["a nested-object matcher", { route: { a: { b: 1 } } }],
+    ["an empty array matcher", { route: [] }],
+    ["a non-scalar array member", { route: [{ a: 1 }] }],
+    ["a non-string prefix", { route: { prefix: 4 } }],
+    ["an empty prefix", { route: { prefix: "" } }],
+    ["a non-boolean exists", { route: { exists: "yes" } }],
+  ])("rejects %s", (_label, when) => {
+    expect(() => ManifestSchema.parse(withWhen(when))).toThrow();
+  });
+
+  it("rejects the whole manifest atomically, not just the offending tool", () => {
+    const m = structuredClone(VALID_MANIFEST);
+    m.agents[0].tools.push({ ...(m.agents[0].tools[0] as any), name: "other_tool" });
+    (m.agents[0].tools[1] as any).when = { route: { regex: "^/x" } };
+    expect(() => ManifestSchema.parse(m)).toThrow();
+  });
+});

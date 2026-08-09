@@ -1,4 +1,4 @@
-export type LogLevel = "info" | "warn" | "error";
+export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export type LogEvent = {
   event: string;
@@ -8,6 +8,12 @@ export type LogEvent = {
 };
 
 export type Logger = {
+  /**
+   * Detail an operator only wants when diagnosing. Emitted like any other
+   * level — the sink does no filtering — so it is a label on the record, not a
+   * suppression mechanism.
+   */
+  debug(event: string, fields?: Record<string, unknown>): void;
   info(event: string, fields?: Record<string, unknown>): void;
   warn(event: string, fields?: Record<string, unknown>): void;
   error(event: string, fields?: Record<string, unknown>): void;
@@ -27,6 +33,7 @@ export function createLogger(opts: { sink?: Sink; bound?: Record<string, unknown
     sink({ ...bound, ...fields, event, level, ts: Date.now() });
   };
   return {
+    debug: (e, f) => emit("debug", e, f),
     info: (e, f) => emit("info", e, f),
     warn: (e, f) => emit("warn", e, f),
     error: (e, f) => emit("error", e, f),

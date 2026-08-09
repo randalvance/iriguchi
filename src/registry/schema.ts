@@ -12,8 +12,40 @@ const ApiCallEndpoint = z.object({
     }),
 });
 
+/**
+ * A tool's condition for being exposed at all, matched against the request's
+ * `iri_context`.
+ *
+ * Deliberately four forms and no regex. Manifests arrive through a
+ * secret-gated endpoint so they are semi-trusted, but a catastrophically
+ * backtracking pattern here would stall tool resolution on every run, and
+ * `prefix` already covers the route-hierarchy case that motivates one.
+ *
+ * Matching is best-effort over whatever keys the client sent — see
+ * `matchesWhen` in `src/agent/context.ts`. A clause key naming a path the
+ * context does not carry fails every form but `{ exists: false }`.
+ */
+const WhenScalar = z.union([z.string(), z.number(), z.boolean()]);
+
+const WhenMatcherSchema = z.union([
+  WhenScalar,
+  z.array(WhenScalar).min(1),
+  z.strictObject({ prefix: z.string().min(1) }),
+  z.strictObject({ exists: z.boolean() }),
+]);
+
+const WhenClauseSchema = z
+  .record(z.string().min(1), WhenMatcherSchema)
+  // An empty clause would be indistinguishable from no clause at match time
+  // but reads as a deliberate restriction, so it is rejected rather than
+  // silently treated as "always".
+  .refine((w) => Object.keys(w).length > 0, {
+    message: "when clause must declare at least one path",
+  });
+
 const ApiCallTool = z.object({
   type: z.literal("api_call"),
+  when: WhenClauseSchema.optional(),
   name: z.string().min(1),
   description: z.string().min(1),
   parameters: JsonSchemaObject,
@@ -34,6 +66,10 @@ const ApiCallTool = z.object({
  */
 const McpServerTool = z.object({
   type: z.literal("mcp"),
+  // Gates the whole server, not individual tools: discovery is per-server and
+  // its tool list is not known until the gateway connects, so a non-matching
+  // entry is never dialed at all.
+  when: WhenClauseSchema.optional(),
   name: z
     .string()
     .min(1)
@@ -123,3 +159,5 @@ export type Tool = z.infer<typeof ToolSchema>;
 export type ApiCallTool = Extract<Tool, { type: "api_call" }>;
 export type McpServerTool = Extract<Tool, { type: "mcp" }>;
 export type Skill = z.infer<typeof SkillSchema>;
+export type WhenMatcher = z.infer<typeof WhenMatcherSchema>;
+export type WhenClause = z.infer<typeof WhenClauseSchema>;

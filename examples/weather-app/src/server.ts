@@ -12,8 +12,24 @@ const GATEWAY_URL = process.env.IRI_GATEWAY_URL ?? "http://localhost:4000";
 const REG_SECRET = process.env.IRI_REGISTRATION_SECRET ?? "";
 
 let appToken: string | null = null;
+/** Stand-in for per-user storage; a real app would key this by session. */
+const savedLocations = new Set<string>();
 
 const app = new Hono();
+
+const CONDITIONS = ["sunny", "cloudy", "rainy", "windy", "snowy"];
+
+/** Deterministic fake forecast, so the same city always reads the same. */
+function forecastFor(location: string, days: number) {
+  const seed = [...location].reduce((s, c) => s + c.charCodeAt(0), 0);
+  const baseTemp = 50 + (seed % 30);
+  return Array.from({ length: days }).map((_, i) => ({
+    day: i + 1,
+    high_f: baseTemp + ((i * 3) % 10),
+    low_f: baseTemp - 10 + ((i * 2) % 8),
+    condition: CONDITIONS[(seed + i) % CONDITIONS.length],
+  }));
+}
 
 // Presence-only, and deliberately so: the gateway mints our app token and
 // fetches this endpoint with it before registration returns, so at that moment
@@ -41,16 +57,49 @@ app.post("/api/forecast", async (c) => {
   if (!location) {
     return c.json({ error: "location required" }, 400);
   }
-  const seed = [...location].reduce((s, c) => s + c.charCodeAt(0), 0);
-  const baseTemp = 50 + (seed % 30);
-  const conditions = ["sunny", "cloudy", "rainy", "windy", "snowy"];
-  const days_out = Array.from({ length: days }).map((_, i) => ({
-    day: i + 1,
-    high_f: baseTemp + (i * 3) % 10,
-    low_f: baseTemp - 10 + (i * 2) % 8,
-    condition: conditions[(seed + i) % conditions.length],
-  }));
-  return c.json({ location, days_out });
+  // Logged so you can see when the agent actually fetches versus when it reads
+  // what was already on screen through get_context.
+  console.log(`[weather-app] get_forecast: ${location} (${days}d)`);
+  return c.json({ location, days_out: forecastFor(location, days) });
+});
+
+// Exposed only while the user is on a city screen, via the tool's `when`
+// clause. The gateway never offers it otherwise, so this handler is not a
+// second place to enforce that — it just does the work.
+app.post("/api/locations", async (c) => {
+  if (!appToken || c.req.header("Authorization") !== `Bearer ${appToken}`) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const { city } = (await c.req.json()) as { city?: string };
+  if (!city) return c.json({ error: "city required" }, 400);
+  savedLocations.add(city);
+  console.log(`[weather-app] saved location: ${city}`);
+  return c.json({ saved: city, saved_locations: [...savedLocations] });
+});
+
+/**
+ * What the UI renders — and, verbatim, what it sends as `iri_context`.
+ *
+ * Deliberately not a tool endpoint. This is the app's own front end calling
+ * its own API, so in a real app it would be authenticated by the user's
+ * session; the app token exists for the gateway's tool calls and is not
+ * something a browser should ever hold. The point of the demo is that this
+ * data is *already on screen* by the time the user types, which is why the
+ * agent should read it from context instead of fetching it again.
+ */
+app.get("/api/screen", (c) => {
+  const city = c.req.query("city");
+  if (!city) {
+    return c.json({ route: "/", saved_locations: [...savedLocations] });
+  }
+  return c.json({
+    route: `/city/${city.toLowerCase().replace(/\s+/g, "-")}`,
+    city,
+    units: "imperial",
+    today: new Date().toISOString().slice(0, 10),
+    saved_locations: [...savedLocations],
+    forecast: forecastFor(city, 7),
+  });
 });
 
 app.get("/", async (c) => {
