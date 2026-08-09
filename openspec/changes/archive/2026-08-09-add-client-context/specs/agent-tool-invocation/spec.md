@@ -1,8 +1,5 @@
-# agent-tool-invocation Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-openrouter-provider. Update Purpose after archive.
-## Requirements
 ### Requirement: Declared api_call tools are reachable during a run
 An agent whose manifest declares `api_call` tools SHALL have those tools exposed to the model for the duration of a run, and a tool the model elects to call SHALL result in an HTTP request to the owning app at `{base_url}{endpoint.path}` using the declared method. The gateway SHALL present the app's active app token on that request. This SHALL hold regardless of which configured provider the agent is routed to, since tool exposure is a property of the run rather than of the provider. A tool that declares a `when` clause SHALL be exposed only when that clause matches the request's context; a tool that declares no `when` clause SHALL always be exposed.
 
@@ -22,27 +19,7 @@ An agent whose manifest declares `api_call` tools SHALL have those tools exposed
 - **WHEN** an agent's tool declares no `when` clause
 - **THEN** it is exposed whether or not the request carries a context
 
-### Requirement: Tool results are folded back into the run
-A tool's response SHALL be returned to the model as the result of its call, and the model's subsequent output SHALL be able to incorporate it. A tool that fails — non-2xx, timeout, or network error — SHALL yield an error payload to the model rather than aborting the run, so the model can react to it. The final assistant text SHALL reflect the completed multi-turn exchange, not just the turn that requested the tool.
-
-#### Scenario: Result reaches the model's next turn
-- **WHEN** an agent calls a tool that returns data, and the model then produces text derived from it
-- **THEN** the run's final assistant content contains that derived text
-
-#### Scenario: Failing tool does not abort the run
-- **WHEN** a declared tool endpoint returns a non-2xx response
-- **THEN** the model receives an error payload as the tool result and the run continues to completion
-
-### Requirement: End-to-end tool invocation is verified without live credentials
-The test suite SHALL include a provider-agnostic test that exercises the full tool loop — declaration, model-elected call, app request, result, and final answer — against a scripted provider, so it runs in the default suite with no API key and no network. Coverage of the tool loop SHALL NOT depend solely on tests gated behind live-credential flags.
-
-#### Scenario: Full loop runs in the default suite
-- **WHEN** the default test suite is run with no provider credentials configured
-- **THEN** a test exercising the complete tool loop executes and passes rather than being skipped
-
-#### Scenario: Failure is attributable
-- **WHEN** the tool loop breaks
-- **THEN** the failing assertion identifies which stage broke — tool exposure, app request, result hand-back, or final answer
+## ADDED Requirements
 
 ### Requirement: `when` clauses filter the exposed tool set against the request context
 The gateway SHALL evaluate each declared tool's optional `when` clause against the request's context and SHALL expose only the tools whose clause matches. A `when` clause is an object of path-to-matcher entries, all of which SHALL hold for the clause to match. Paths SHALL be dot notation into the context. Matchers SHALL be: a scalar (strict equality against the value at the path), an array of scalars (matching if the value equals any element), `{ "prefix": <string> }` (the string value at the path starts with the prefix), or `{ "exists": <boolean> }` (the path is present or absent). A path absent from the context SHALL fail every matcher except `{ "exists": false }`. A request carrying no context SHALL be evaluated as the empty object, so every `when`-carrying tool is filtered out. Filtering SHALL be applied before MCP discovery, so an `mcp` entry whose `when` does not match is not connected to at all, and a matching `mcp` entry exposes every tool it advertises. Tools filtered out SHALL be logged by name at `debug`.
@@ -97,4 +74,3 @@ When a run carries a non-empty context, the gateway SHALL add a `get_context` to
 #### Scenario: Visible under the tool-call flag
 - **WHEN** a request sets `iri_show_tool_calls=true` and the model calls `get_context`
 - **THEN** the invocation appears in the reported tool calls in invocation order
-
