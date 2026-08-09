@@ -139,6 +139,9 @@ export function internalRoutes(deps: {
       config: deps.config,
       store: deps.store,
       mcp: deps.mcp,
+      logger,
+      // No `context`: the management UI is not a page-aware client, so a
+      // `when`-carrying tool is correctly absent from runs started here.
       request: {
         requestId,
         agentId,

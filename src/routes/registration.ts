@@ -6,6 +6,7 @@ import { isOriginAllowed } from "../config.ts";
 import type { Store } from "../registry/store.ts";
 import type { Logger } from "../logger.ts";
 import type { Manifest } from "../registry/schema.ts";
+import { GET_CONTEXT_TOOL_NAME } from "../agent/context.ts";
 
 export function registrationRoutes(deps: { config: Config; store: Store; logger: Logger }) {
   const app = new Hono();
@@ -43,6 +44,35 @@ export function registrationRoutes(deps: { config: Config; store: Store; logger:
       }
     }
     return { ok: true };
+  }
+
+  /**
+   * The gateway serves its own `get_context` tool on the same tool surface, so
+   * an `api_call` of that name would be shadowed with no diagnosis at run
+   * time. `mcp` entries are exempt: their tools reach the model prefixed by
+   * the server name (`finance__get_context`) and cannot collide.
+   */
+  function validateReservedToolNames(
+    manifest: Manifest,
+  ): { ok: true } | { ok: false; agentId: string; tool: string } {
+    for (const a of manifest.agents) {
+      for (const t of a.tools) {
+        if (t.type === "api_call" && t.name === GET_CONTEXT_TOOL_NAME) {
+          return { ok: false, agentId: a.id, tool: t.name };
+        }
+      }
+    }
+    return { ok: true };
+  }
+
+  function reservedToolNameResponse(check: { agentId: string; tool: string }) {
+    return {
+      error: {
+        type: "invalid_request_error",
+        code: "reserved_tool_name",
+        message: `agent "${check.agentId}" declares an api_call tool named "${check.tool}", which is reserved: the gateway exposes its own "${GET_CONTEXT_TOOL_NAME}" tool for reading the request's iri_context. Rename the tool.`,
+      },
+    };
   }
 
   function disallowedMcpOriginResponse(check: {
@@ -137,6 +167,10 @@ export function registrationRoutes(deps: { config: Config; store: Store; logger:
         if (!mcpCheck.ok) {
           return c.json(disallowedMcpOriginResponse(mcpCheck), 400);
         }
+        const reservedCheck = validateReservedToolNames(manifest);
+        if (!reservedCheck.ok) {
+          return c.json(reservedToolNameResponse(reservedCheck), 400);
+        }
         deps.store.upsertApp({ id: body.id, base_url: body.base_url, app_token: appToken, manifest });
         deps.logger.info("app.register", { app_id: body.id, base_url: body.base_url, agents: manifest.agents.map((a) => a.id) });
         return c.json({ app_token: appToken, accepted_agents: manifest.agents.map((a) => a.id) }, 201);
@@ -171,6 +205,10 @@ export function registrationRoutes(deps: { config: Config; store: Store; logger:
       const mcpCheck = validateMcpEntries(manifest);
       if (!mcpCheck.ok) {
         return c.json(disallowedMcpOriginResponse(mcpCheck), 400);
+      }
+      const reservedCheck = validateReservedToolNames(manifest);
+      if (!reservedCheck.ok) {
+        return c.json(reservedToolNameResponse(reservedCheck), 400);
       }
       deps.store.upsertApp({ id, base_url: stored.base_url, app_token: stored.app_token, manifest });
       deps.logger.info("manifest.fetch", { app_id: id, agents: manifest.agents.length });

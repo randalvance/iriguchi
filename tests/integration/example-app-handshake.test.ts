@@ -20,6 +20,7 @@ describe("example app handshake", () => {
       toolCallTimeoutMs: 2000,
       manifestCacheTtlMs: 60_000,
       mcpCacheTtlMs: 300_000,
+      maxContextBytes: 65536,
       mcpAllowedOrigins: [] as string[],
       requestTimeoutMs: 5000,
       dbPath: ":memory:",

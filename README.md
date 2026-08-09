@@ -115,6 +115,31 @@ curl http://localhost:4000/v1/chat/completions \
   }'
 ```
 
+## Page-aware clients
+
+A client can tell the gateway what its user is looking at, so an agent can resolve "this account" or "these rows" without the user restating them. Send any JSON object as `iri_context`:
+
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer $IRI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "iri_agent": "finance-bot",
+    "messages": [{"role": "user", "content": "what was the total spending of this account last month"}],
+    "iri_context": {
+      "route": "/accounts/acc_42",
+      "account_id": "acc_42",
+      "today": "2026-08-09"
+    }
+  }'
+```
+
+No schema to declare and no registration step — the gateway checks only that it is a JSON object within `IRI_MAX_CONTEXT_BYTES` (default 65536), and rejects otherwise with `400 invalid_context` or `400 context_too_large`. Context is request-scoped: nothing is stored between requests.
+
+Top-level scalars go into the agent's system prompt; nested objects and arrays appear as placeholders and are read on demand through a gateway-owned `get_context` tool, so a large payload costs tokens only on the turn that reads it. Manifest tools can also carry a `when` clause and be exposed only on matching screens. Both are covered in [making your agent page-aware](docs/app-integration.md#step-6--make-your-agent-page-aware).
+
+Context is client-supplied and reaches the model — treat it as untrusted data, and don't put secrets in it. Values are never logged; the gateway records only key names and byte size.
+
 ## MCP servers
 
 An agent can reach tools served by an external [MCP](https://modelcontextprotocol.io) server, not only the `api_call` endpoints its own app exposes. Note the direction: `api_call` tools are ones an app pushes at the gateway for the gateway to call back into, while an MCP server is one the gateway dials *out* to and discovers tools from.

@@ -23,6 +23,15 @@ export type Config = {
   requestTimeoutMs: number;
   mcpCacheTtlMs: number;
   /**
+   * Largest serialized `iri_context` a request may carry, in bytes.
+   *
+   * The envelope is free-form by design, so this is the only bound on it. It
+   * has to fit a screen's worth of state — a staged import preview, say —
+   * while staying far below anything that would make a single request's prompt
+   * assembly expensive.
+   */
+  maxContextBytes: number;
+  /**
    * Origins an agent manifest may name in an `mcp` entry, normalized to
    * `scheme://host[:port]`. Empty means unrestricted — MCP URLs arrive from
    * registering apps, so this is the only bound on where the gateway will dial
@@ -220,6 +229,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     manifestCacheTtlMs: intVar(env, "IRI_MANIFEST_CACHE_TTL_MS", 300000),
     requestTimeoutMs: intVar(env, "IRI_REQUEST_TIMEOUT_MS", 300000),
     mcpCacheTtlMs: intVar(env, "IRI_MCP_CACHE_TTL_MS", 300000),
+    maxContextBytes: intVar(env, "IRI_MAX_CONTEXT_BYTES", 65536),
     mcpAllowedOrigins: parseAllowedOrigins(env.IRI_MCP_ALLOWED_ORIGINS),
     uiEnabled: boolVar(env, "IRI_UI_ENABLED", false),
     uiDist: env.IRI_UI_DIST || "./ui/dist",

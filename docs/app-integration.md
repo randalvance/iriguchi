@@ -69,7 +69,8 @@ Validated against a strict schema (`src/registry/schema.ts`); the whole manifest
             "required": ["id"]
           },
           "endpoint": { "method": "POST", "path": "/api/thing" },  // path is relative to your base_url
-          "timeout_ms": 10000               // optional; defaults to the gateway's IRI_TOOL_CALL_TIMEOUT_MS
+          "timeout_ms": 10000,              // optional; defaults to the gateway's IRI_TOOL_CALL_TIMEOUT_MS
+          "when": { "route": "/things" }    // optional; expose only on matching screens — see below
         },
         {
           "type": "mcp",                    // an external MCP server the gateway dials OUT to
@@ -97,6 +98,33 @@ Notes on `mcp` tools:
 - If the gateway sets `IRI_MCP_ALLOWED_ORIGINS`, a URL outside that allowlist fails registration with `400 mcp_origin_not_allowed`.
 - Failures never abort a run. A dead server costs its own tools; a failing tool call reaches the model as an error payload it can react to.
 - See the [MCP section of the README](../README.md#mcp-servers) for discovery, caching, and what is deliberately not supported.
+
+Notes on tool names:
+- `get_context` is **reserved** for `api_call` tools. The gateway exposes its own tool by that name (see [Step 6](#step-6--make-your-agent-page-aware)), so a manifest declaring one fails registration with `400 reserved_tool_name`. `mcp` entries are exempt — their tools reach the model prefixed by the server name, so `finance__get_context` cannot collide.
+
+### Scoping a tool to a screen with `when`
+
+Any tool — `api_call` or `mcp` — may carry an optional `when` clause. The gateway matches it against the request's [client context](#step-6--make-your-agent-page-aware) and exposes the tool only if it holds. A tool with no `when` is always exposed, so this changes nothing for a manifest that does not use it.
+
+```jsonc
+{ "type": "api_call", "name": "apply_import_mapping", "when": { "route": "/imports/preview" } }
+{ "type": "mcp", "name": "finance", "when": { "route": { "prefix": "/accounts/" } } }
+```
+
+A clause is an object of *path → matcher*, and **every** entry must hold. Paths are dot notation into the context (`screen.name`).
+
+| Matcher | Form | Matches when |
+| --- | --- | --- |
+| Equality | `"/imports/preview"`, `42`, `true` | the value at the path is strictly equal — no coercion, so `"42"` ≠ `42` |
+| Membership | `["/imports/preview", "/imports/review"]` | the value equals any element |
+| Prefix | `{ "prefix": "/accounts/" }` | the value is a string starting with the prefix |
+| Presence | `{ "exists": true }` / `{ "exists": false }` | the path is present / absent |
+
+Rules worth knowing before you rely on it:
+- **A path the context does not carry fails every matcher except `{ "exists": false }`.**
+- **A request with no context at all is the empty object**, so every `when`-carrying tool drops out. That is intended — a page-scoped tool has no business in a page-less request — but it also means a client that forgets to send context silently loses those tools. The gateway logs the dropped names at `debug` under `tools.filtered`; that log is the only thing distinguishing this from "the model chose not to call it".
+- **A `when` on an `mcp` entry gates the whole server.** Discovery is per-server and its tool list is unknown until the gateway connects, so a non-matching entry is never dialed at all.
+- Matchers are validated at registration. `{ "regex": … }` and other unrecognized forms fail the whole manifest then, rather than becoming a tool that quietly never appears.
 
 Notes on models and providers:
 - `default_model` is passed through verbatim — write it in the form the agent's provider expects (`claude-opus-5` for Anthropic direct, `moonshotai/kimi-k3` for OpenRouter's Anthropic endpoint, a local id like `ornith-1.0-35b` for LM Studio).
@@ -208,3 +236,55 @@ curl {gateway}/v1/chat/completions \
 The non-streaming body is the streaming run's text deltas concatenated, so both modes return the same content for the same run. `finish_reason` is `"stop"`, or `"length"` when the agent hit `IRI_MAX_AGENT_TURNS`. Add `?iri_show_tool_calls=true` and the agent's tool invocations appear as `choices[0].message.tool_calls`. A non-boolean `stream` is a `400`.
 
 Non-streaming buffers the whole run before responding, so nothing arrives until the agent finishes — set a client timeout accordingly, and prefer `stream: true` for interactive UIs.
+
+## Step 6 — Make your agent page-aware
+
+A chat box embedded in your app knows something the user's words leave out: which screen they are on and what is selected there. Send it as `iri_context` and the agent can resolve "this account" or "these rows" without the user restating them.
+
+```jsonc
+POST {gateway}/v1/chat/completions
+{
+  "iri_agent": "finance-bot",
+  "messages": [{ "role": "user", "content": "what was the total spending of this account last month" }],
+  "iri_context": {
+    "route": "/accounts/acc_42",
+    "account_id": "acc_42",
+    "account_name": "Chase Checking",
+    "today": "2026-08-09"
+  }
+}
+```
+
+`iri_context` is **free-form**: any JSON object, no schema to declare and no registration step. Read your router state and send it. The gateway validates only two things, before the run starts and identically in both response modes:
+
+| Failure | Status | `code` |
+| --- | --- | --- |
+| Not a JSON object (array, string, number, `null`) | `400` | `invalid_context` |
+| Serialized size over `IRI_MAX_CONTEXT_BYTES` (default 64 KiB) | `400` | `context_too_large` |
+
+Context is **request-scoped**. The gateway does not store it, does not associate it with a session, and does not carry it into the next request — send it on every request that needs it. Omitting it entirely is valid and behaves exactly as it did before this field existed.
+
+### How the agent sees it — two tiers
+
+**Top-level scalars go into the system prompt**, so the model always knows the surface it is on. **Nested objects and arrays become placeholders**, and the model reads them through a gateway-owned `get_context` tool only when it needs them. A 47-row import preview therefore costs tokens on the one turn that reads it, not on every turn.
+
+Given `{ route, import_batch_id, rows: [47 items] }`, the model's prompt gains roughly:
+
+```
+route: /imports/preview
+import_batch_id: b_123
+rows: <array of 47 items>
+```
+
+and a `get_context` tool taking an optional `path` in dot/bracket notation — `get_context({ path: "rows" })`, `get_context({ path: "rows[0].description" })`, or no argument for the whole object. An unresolvable path comes back as an error the model can correct on its next turn, not as a failed run. The tool is exposed only when the request carries a context, is served from the request itself, and never produces an HTTP call to your app.
+
+Two consequences worth designing around:
+
+- **Put what the model must always know at the top level, as a scalar.** A `screen: { name, id }` nested object renders as `screen: <object with 2 keys>` and is invisible until the model fetches it. Flatten to `screen_name` / `screen_id`.
+- **Long scalars are truncated to 200 characters** and the whole block is capped at 2000; keys dropped by the cap are named in a trailing `(truncated: …)` line.
+
+### Context is untrusted data
+
+The block is introduced as data rather than instructions, and the block fences are escaped so a value cannot close the region it lives in. That framing is defense in depth, not a guarantee — the substantive protection is that only top-level scalars ever reach the system prompt. A hostile string inside a payload (a transaction description that came from an imported bank CSV, say) can reach the model only as a `get_context` tool result.
+
+Two things follow for you: don't put secrets in the context expecting them to stay out of the model's view, and don't send anything you would not want a model to read. Values are never logged — the gateway logs only the top-level key names and the byte size.

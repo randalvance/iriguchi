@@ -12,6 +12,13 @@
       input[type=text] { flex: 1; padding: 0.5rem; }
       button { padding: 0.5rem 1rem; }
       label { display: block; margin: 0.5rem 0; font-size: 0.85rem; color: #444; }
+      #cities button { margin-right: 0.25rem; }
+      #cities button[aria-pressed=true] { font-weight: 700; outline: 2px solid #036; }
+      table { border-collapse: collapse; font-size: 0.85rem; margin: 0.5rem 0; }
+      th, td { border: 1px solid #ddd; padding: 0.2rem 0.5rem; text-align: left; }
+      #screen { background: #f6f6f6; border: 1px solid #ddd; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
+      #route { font-family: ui-monospace, monospace; }
+      .hint { font-size: 0.8rem; color: #666; }
     </style>
   </head>
   <body>
@@ -19,6 +26,25 @@
     <p>Demo chat backed by Iriguchi + Claude Sonnet via the <code>weather-bot</code> agent.</p>
     <label>Gateway URL <input id="gw" type="text" value="http://localhost:4000" style="width: 18rem" /></label>
     <label>API key <input id="key" type="text" value="" placeholder="IRI_API_KEY" style="width: 18rem" /></label>
+
+    <div id="screen">
+      <div id="cities">
+        Viewing:
+        <button type="button" data-city="">Home</button>
+        <button type="button" data-city="New York">New York</button>
+        <button type="button" data-city="Tokyo">Tokyo</button>
+        <button type="button" data-city="London">London</button>
+      </div>
+      <p>Screen route: <span id="route">/</span> · saved: <span id="saved">(none)</span></p>
+      <div id="forecast"></div>
+      <p class="hint">
+        Everything on this panel is sent as <code>iri_context</code> with each message.
+        Scalars (route, city, today) go into the agent's prompt; the 7-day
+        <code>forecast</code> array does not — the agent reads it with
+        <code>get_context</code> only if it needs it.
+      </p>
+    </div>
+
     <div id="log"></div>
     <form id="f">
       <input id="msg" type="text" placeholder="What's the weather in NYC?" autocomplete="off" />
@@ -27,6 +53,44 @@
     <script>
       const log = document.getElementById("log");
       const history = [];
+
+      // The app's own screen state. This object is what gets sent as
+      // `iri_context` — the demo's whole point is that it is not assembled for
+      // the agent, it is just what the page is already showing.
+      let screen = { route: "/" };
+      let currentCity = "";
+
+      async function loadScreen(city) {
+        currentCity = city;
+        const url = city ? `/api/screen?city=${encodeURIComponent(city)}` : "/api/screen";
+        screen = await (await fetch(url)).json();
+        render();
+      }
+
+      function render() {
+        document.getElementById("route").textContent = screen.route;
+        document.getElementById("saved").textContent =
+          screen.saved_locations?.length ? screen.saved_locations.join(", ") : "(none)";
+        for (const b of document.querySelectorAll("#cities button")) {
+          b.setAttribute("aria-pressed", String(b.dataset.city === currentCity));
+        }
+        const host = document.getElementById("forecast");
+        if (!screen.forecast) {
+          host.innerHTML = "";
+          return;
+        }
+        host.innerHTML =
+          `<table><tr><th>Day</th><th>High °F</th><th>Low °F</th><th>Condition</th></tr>` +
+          screen.forecast
+            .map((d) => `<tr><td>${d.day}</td><td>${d.high_f}</td><td>${d.low_f}</td><td>${d.condition}</td></tr>`)
+            .join("") +
+          `</table>`;
+      }
+
+      for (const b of document.querySelectorAll("#cities button")) {
+        b.addEventListener("click", () => loadScreen(b.dataset.city));
+      }
+      loadScreen("");
       function append(role, text) {
         const div = document.createElement("div");
         div.className = role === "user" ? "me" : "bot";
@@ -51,6 +115,9 @@
             iri_agent: "weather-bot",
             messages: history,
             stream: true,
+            // Sent verbatim, every request. The gateway does not remember it
+            // between requests, so it goes on each one.
+            iri_context: screen,
           }),
         });
         if (!res.ok) {
@@ -87,6 +154,9 @@
           }
         }
         history.push({ role: "assistant", content: assistantText });
+        // The agent may have changed app state through a tool (save_location),
+        // so re-read the screen rather than trusting our copy of it.
+        await loadScreen(currentCity);
       });
     </script>
   </body>

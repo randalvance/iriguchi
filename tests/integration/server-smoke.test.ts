@@ -7,6 +7,7 @@ const cfg = {
   toolCallTimeoutMs: 1000,
   manifestCacheTtlMs: 1000,
   mcpCacheTtlMs: 300_000,
+  maxContextBytes: 65536,
   mcpAllowedOrigins: [],
   requestTimeoutMs: 1000,
   dbPath: ":memory:",

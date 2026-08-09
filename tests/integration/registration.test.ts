@@ -52,6 +52,7 @@ const cfg = () => ({
   toolCallTimeoutMs: 1000,
   manifestCacheTtlMs: 1000,
   mcpCacheTtlMs: 300_000,
+  maxContextBytes: 65536,
   mcpAllowedOrigins: [] as string[],
   requestTimeoutMs: 1000,
   dbPath: ":memory:",
@@ -373,5 +374,83 @@ describe("POST /apps/register — mcp entries", () => {
     expect(res.status).toBe(400);
     expect((await res.json() as any).error.code).toBe("mcp_origin_not_allowed");
     expect(store.getApp("weather-app")).not.toBeNull();
+  });
+});
+
+describe("reserved tool names", () => {
+  const apiCallTool = (name: string) => ({
+    type: "api_call",
+    name,
+    description: "d",
+    parameters: { type: "object", properties: {} },
+    endpoint: { method: "POST", path: "/api/thing" },
+  });
+
+  const register = (app: ReturnType<typeof buildApp>) =>
+    app.fetch(
+      new Request("http://x/apps/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer reg-secret" },
+        body: JSON.stringify({ id: "weather-app", base_url: baseUrl }),
+      }),
+    );
+
+  it("rejects an api_call tool named get_context and persists nothing", async () => {
+    (manifestResponse.agents as any[])[0].tools = [apiCallTool("get_context")];
+    const app = buildApp({ config: cfg(), store });
+    const res = await register(app);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.error.code).toBe("reserved_tool_name");
+    expect(body.error.message).toContain("get_context");
+    expect(store.getApp("weather-app")).toBeNull();
+  });
+
+  it("rejects it on refresh-manifest too", async () => {
+    const app = buildApp({ config: cfg(), store });
+    const first = await register(app);
+    expect(first.status).toBe(201);
+    const token = ((await first.json()) as any).app_token;
+
+    (manifestResponse.agents as any[])[0].tools = [apiCallTool("get_context")];
+    const res = await app.fetch(
+      new Request("http://x/apps/weather-app/refresh-manifest", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error.code).toBe("reserved_tool_name");
+  });
+
+  it("allows an mcp server to advertise get_context, since its tools are prefixed", async () => {
+    (manifestResponse.agents as any[])[0].tools = [
+      { type: "mcp", name: "finance", url: "http://localhost:9/mcp", tools: ["get_context"] },
+    ];
+    const app = buildApp({ config: cfg(), store });
+    expect((await register(app)).status).toBe(201);
+  });
+
+  it("accepts a when clause through registration and stores it", async () => {
+    (manifestResponse.agents as any[])[0].tools = [
+      { ...apiCallTool("apply_import_mapping"), when: { route: "/imports/preview" } },
+    ];
+    const app = buildApp({ config: cfg(), store });
+    expect((await register(app)).status).toBe(201);
+    const stored = store.getApp("weather-app");
+    expect((stored!.manifest!.agents[0].tools[0] as any).when).toEqual({
+      route: "/imports/preview",
+    });
+  });
+
+  it("rejects a malformed when clause atomically", async () => {
+    (manifestResponse.agents as any[])[0].tools = [
+      { ...apiCallTool("apply_import_mapping"), when: { route: { regex: "^/imports" } } },
+    ];
+    const app = buildApp({ config: cfg(), store });
+    const res = await register(app);
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as any).error.type).toBe("app_unavailable");
+    expect(store.getApp("weather-app")).toBeNull();
   });
 });

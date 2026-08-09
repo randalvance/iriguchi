@@ -8,6 +8,7 @@ import { runAgentChunks, GatewayError } from "../agent/runner.ts";
 import { streamChatRun, validateMessages, gatewayErrorResponse } from "./chat-run.ts";
 import type { McpRuntime } from "../agent/mcp/discovery.ts";
 import { aggregateChunks, type OpenAIChunk } from "../agent/openai-sse.ts";
+import { parseClientContext, contextByteLength } from "../agent/context.ts";
 
 export function openaiRoutes(deps: {
   config: Config;
@@ -56,6 +57,22 @@ export function openaiRoutes(deps: {
         400,
       );
     }
+    // Validated before the run starts, so an invalid context is always a JSON
+    // 400 — never an SSE error event — whatever `stream` says.
+    const parsedContext = parseClientContext(body.iri_context, deps.config.maxContextBytes);
+    if (!parsedContext.ok) {
+      return c.json(
+        {
+          error: {
+            type: "invalid_request_error",
+            code: parsedContext.code,
+            message: parsedContext.message,
+          },
+        },
+        400,
+      );
+    }
+    const context = parsedContext.context;
     const wantsStream = body.stream === true;
     const showToolCalls = c.req.query("iri_show_tool_calls") === "true";
     logger.info("request.start", {
@@ -64,18 +81,25 @@ export function openaiRoutes(deps: {
       iri_agent: body.iri_agent ?? null,
       model: body.model ?? null,
       stream: wantsStream,
+      // Key names and size only. Context carries whatever the calling app has
+      // on screen — account identifiers, transaction rows — and none of that
+      // belongs in a log aggregator.
+      context_keys: Object.keys(context),
+      context_bytes: contextByteLength(context),
     });
 
     const runnerOpts = {
       config: deps.config,
       store: deps.store,
       mcp: deps.mcp,
+      logger,
       request: {
         requestId,
         agentId: typeof body.iri_agent === "string" ? body.iri_agent : null,
         model: typeof body.model === "string" ? body.model : null,
         messages,
         showToolCalls,
+        context,
       },
     };
 

@@ -28,6 +28,7 @@ const cfg = (over: Partial<Config> = {}): Config => ({
   manifestCacheTtlMs: 300000,
   requestTimeoutMs: 300000,
   mcpCacheTtlMs: 300000,
+  maxContextBytes: 65536,
   mcpAllowedOrigins: [],
   uiEnabled: true,
   uiDist: "./ui/dist",
