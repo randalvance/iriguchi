@@ -19,6 +19,8 @@ describe("server", () => {
         },
         defaultProvider: "anthropic",
         apiKey: "k",
+        uiEnabled: false,
+        uiDist: "./ui/dist",
         registrationSecret: "s",
       },
     });

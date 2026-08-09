@@ -12,3 +12,8 @@ dist/
 build/
 coverage/
 .iri-tmp/
+
+# UI build output and Astro's generated type cache. `dist/` above already
+# covers ui/dist; these are the ones it does not.
+.astro/
+ui/.astro/

@@ -61,6 +61,8 @@ const cfg = () => ({
   },
   defaultProvider: "anthropic",
   apiKey: "client-key",
+  uiEnabled: false,
+  uiDist: "./ui/dist",
   registrationSecret: "reg-secret",
 });
 

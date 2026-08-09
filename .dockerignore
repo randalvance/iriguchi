@@ -12,6 +12,12 @@ iriguchi.db-*
 # Reinstalled in the image by `npm ci`; host builds may be the wrong platform.
 node_modules
 examples/**/node_modules
+ui/node_modules
+
+# The image builds the UI itself. A host build copied in would be whatever the
+# developer last ran, silently shipping stale assets.
+ui/dist
+ui/.astro
 
 .git
 .gitignore

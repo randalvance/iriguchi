@@ -1,0 +1,184 @@
+---
+import Base from "../layouts/Base.astro";
+---
+
+<Base title="Chat" section="chat">
+  <div class="chat">
+    <div class="chat-toolbar">
+      <label class="label" for="agent">Agent</label>
+      <select class="select" id="agent" style="max-width: 28rem" disabled>
+        <option>Loading…</option>
+      </select>
+      <span class="u-meta" id="agent-meta"></span>
+    </div>
+
+    <div class="chat-transcript" id="scroller">
+      <div class="chat-thread" id="transcript" aria-live="polite" aria-atomic="false">
+        <div class="empty" id="placeholder">
+          <p class="empty-title">No messages yet</p>
+          <p class="empty-body">Pick an agent and send a message. The gateway runs it with its own credentials — nothing is stored here.</p>
+        </div>
+      </div>
+    </div>
+
+    <form class="chat-composer" id="composer">
+      <label class="u-sr-only" for="prompt">Message</label>
+      <textarea
+        class="textarea"
+        id="prompt"
+        placeholder="Ask the agent something… (Enter to send, Shift+Enter for a newline)"
+        rows="1"
+        disabled></textarea>
+      <button class="btn btn-primary" id="send" type="submit" disabled>Send</button>
+    </form>
+  </div>
+</Base>
+
+<script>
+  import { api, readChatStream, ApiError, type AgentSummary, type ChatMessage } from "../lib/api";
+
+  const picker = document.getElementById("agent") as HTMLSelectElement;
+  const agentMeta = document.getElementById("agent-meta") as HTMLElement;
+  const transcript = document.getElementById("transcript") as HTMLElement;
+  const scroller = document.getElementById("scroller") as HTMLElement;
+  const placeholder = document.getElementById("placeholder") as HTMLElement;
+  const composer = document.getElementById("composer") as HTMLFormElement;
+  const prompt = document.getElementById("prompt") as HTMLTextAreaElement;
+  const send = document.getElementById("send") as HTMLButtonElement;
+
+  /**
+   * The transcript is the request body. It accumulates for the session only —
+   * there is no server-side history — so a follow-up carries the prior turns
+   * and a reload starts over. Deliberate: persisting conversations is a
+   * storage decision the gateway has not made.
+   */
+  const history: ChatMessage[] = [];
+  let agents: AgentSummary[] = [];
+  let busy = false;
+
+  function setBusy(next: boolean) {
+    busy = next;
+    send.disabled = next || agents.length === 0;
+    send.dataset.busy = String(next);
+    // The agent stays swappable between turns but not during one: changing it
+    // mid-run would attribute a reply to an agent that did not produce it.
+    picker.disabled = next || agents.length === 0;
+  }
+
+  function bubble(role: "user" | "assistant"): HTMLElement {
+    placeholder.remove();
+    const el = document.createElement("div");
+    el.className = role === "user" ? "msg msg-user" : "msg msg-assistant";
+    if (role === "assistant") {
+      const label = document.createElement("div");
+      label.className = "msg-role";
+      label.textContent = picker.value || "assistant";
+      el.append(label);
+    }
+    const body = document.createElement("div");
+    body.className = "msg-body";
+    el.append(body);
+    transcript.append(el);
+    scroller.scrollTop = scroller.scrollHeight;
+    return body;
+  }
+
+  function showError(message: string) {
+    placeholder.remove();
+    const el = document.createElement("div");
+    el.className = "msg msg-error";
+    el.textContent = message;
+    transcript.append(el);
+    scroller.scrollTop = scroller.scrollHeight;
+  }
+
+  function describe(agent: AgentSummary): string {
+    return `${agent.app_name} · ${agent.provider} · ${agent.model}`;
+  }
+
+  async function loadAgents() {
+    try {
+      agents = await api.listAgents();
+    } catch (err) {
+      picker.innerHTML = "<option>unavailable</option>";
+      showError(
+        err instanceof ApiError ? `Could not load agents: ${err.message}` : String(err),
+      );
+      return;
+    }
+
+    if (agents.length === 0) {
+      // An empty picker is indistinguishable from a broken fetch, so say which
+      // one this is and take away the affordance that cannot work.
+      picker.innerHTML = "<option>no agents registered</option>";
+      agentMeta.textContent = "Register an app with the gateway to see its agents here.";
+      prompt.placeholder = "No agents are registered.";
+      return;
+    }
+
+    picker.innerHTML = "";
+    for (const agent of agents) {
+      const option = document.createElement("option");
+      option.value = agent.id;
+      option.textContent = `${agent.id} — ${agent.app_name}`;
+      picker.append(option);
+    }
+    picker.disabled = false;
+    prompt.disabled = false;
+    send.disabled = false;
+    syncMeta();
+  }
+
+  function syncMeta() {
+    const current = agents.find((a) => a.id === picker.value);
+    agentMeta.textContent = current ? describe(current) : "";
+  }
+
+  picker.addEventListener("change", syncMeta);
+
+  // Enter sends; Shift+Enter is a newline. Standard for a chat composer, and
+  // the placeholder says so rather than leaving it to be discovered.
+  prompt.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      composer.requestSubmit();
+    }
+  });
+
+  composer.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const text = prompt.value.trim();
+    if (!text || busy || !picker.value) return;
+
+    prompt.value = "";
+    history.push({ role: "user", content: text });
+    bubble("user").textContent = text;
+
+    setBusy(true);
+    const target = bubble("assistant");
+    target.classList.add("caret");
+    let answer = "";
+
+    try {
+      const stream = await api.openChat(picker.value, history);
+      for await (const delta of readChatStream(stream)) {
+        answer += delta;
+        target.textContent = answer;
+        scroller.scrollTop = scroller.scrollHeight;
+      }
+      if (!answer) target.textContent = "(the agent returned no text)";
+      history.push({ role: "assistant", content: answer });
+    } catch (err) {
+      // Prior turns stay on screen and the composer stays usable: a failed run
+      // is a failed turn, not a lost conversation.
+      target.closest(".msg")?.remove();
+      showError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      target.classList.remove("caret");
+      setBusy(false);
+      prompt.focus();
+    }
+  });
+
+  loadAgents();
+</script>

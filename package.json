@@ -12,7 +12,11 @@
     "start": "node src/server.ts",
     "test": "vitest run",
     "test:e2e": "IRI_E2E=1 vitest run tests/e2e --testTimeout 120000",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ui:install": "npm --prefix ui install",
+    "ui:dev": "npm --prefix ui run dev",
+    "ui:build": "npm --prefix ui run build",
+    "ui:check": "npm --prefix ui run check"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",

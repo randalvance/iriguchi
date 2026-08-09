@@ -759,26 +759,33 @@ pre {
   min-height: 0;
   overflow-y: auto;
   padding: var(--space-6) var(--space-4);
+}
+
+/* The thread is one centered column at reading measure. Turns align to each
+   other inside it — without this wrapper, a right-aligned user bubble hugs the
+   viewport edge while assistant prose sits at the centered measure, and the
+   two read as separate columns rather than one conversation. */
+.chat-thread {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+  max-width: var(--measure);
+  margin-inline: auto;
 }
 
 /* Asymmetric by design. A user turn is short and belongs to a person, so it
    is a contained bubble; an assistant turn is long-form prose streaming in,
-   so it runs full width at reading measure with no container to fight. */
+   so it runs the full column with no container to fight. */
 .msg {
-  max-width: var(--measure);
   width: 100%;
-  margin-inline: auto;
   font-size: var(--text-md);
   line-height: var(--leading-relaxed);
 }
 
 .msg-user {
   align-self: flex-end;
-  max-width: min(80%, var(--measure));
-  margin-inline: 0;
+  width: auto;
+  max-width: 80%;
   padding: var(--space-3) var(--space-4);
   background: var(--surface-2);
   border: var(--border-width) solid var(--border);

@@ -11,6 +11,16 @@ export type McpRuntime = {
   cacheTtlMs: number;
   allowedOrigins: string[];
   logger: Logger;
+  /**
+   * Notified when a listing attempt fails, with the reason.
+   *
+   * The cache records successes only, so without this a failure is visible
+   * only as a log line — which is exactly the thing an operator opened the UI
+   * to avoid reading. Optional, and never awaited: discovery's contract is
+   * that a failing server costs its own tools and nothing else, and that must
+   * not become "and whatever the observer does".
+   */
+  onDiscoveryFailure?: (entry: McpServerTool, reason: string) => void;
 };
 
 /** A discovered tool bound to the manifest entry it came from. */
@@ -23,6 +33,29 @@ export type ResolvedMcpTool = {
   inputSchema: Record<string, unknown>;
   entry: McpServerTool;
 };
+
+/**
+ * A message worth showing someone.
+ *
+ * Node wraps connection failures as a bare `fetch failed` and hides the real
+ * reason on `cause`. "fetch failed" tells an operator nothing;
+ * "fetch failed: connect ECONNREFUSED 127.0.0.1:9" tells them the port is shut.
+ */
+function describeError(err: unknown): string {
+  const message = (err as Error)?.message ?? String(err);
+  const cause = (err as { cause?: unknown })?.cause;
+  const causeMessage = (cause as Error)?.message;
+  return causeMessage && causeMessage !== message ? `${message}: ${causeMessage}` : message;
+}
+
+/** Never let an observer's failure become discovery's failure. */
+function notifyFailure(rt: McpRuntime, entry: McpServerTool, reason: string): void {
+  try {
+    rt.onDiscoveryFailure?.(entry, reason);
+  } catch {
+    // Observing is best-effort by construction.
+  }
+}
 
 function normalizeTools(raw: unknown): DiscoveredTool[] {
   const tools = (raw as { tools?: unknown[] })?.tools;
@@ -67,6 +100,7 @@ export async function discoverTools(
       url: entry.url,
       reason: "origin_not_allowed",
     });
+    notifyFailure(rt, entry, "origin not permitted by IRI_MCP_ALLOWED_ORIGINS");
     return [];
   }
 
@@ -91,6 +125,7 @@ export async function discoverTools(
       url: entry.url,
       err: (err as Error).message,
     });
+    notifyFailure(rt, entry, describeError(err));
     // A previously discovered list outlives a failed re-list: better a stale
     // tool surface than none.
     const stale = rt.cache.peek(entry);
