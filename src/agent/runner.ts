@@ -7,6 +7,7 @@ import { materializeSkills } from "./skills.ts";
 import { invokeTool } from "./tools.ts";
 import { expandAgentTools, type McpRuntime, type ResolvedMcpTool } from "./mcp/discovery.ts";
 import { jsonSchemaToZodRawShape } from "./json-schema-to-zod.ts";
+import { resolveAgentRouting } from "../internal/catalog.ts";
 import {
   translateSdkEvent,
   formatSseChunk,
@@ -124,7 +125,7 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<OpenAIChunk> {
   const agent: Agent | null = lookup?.agent ?? null;
   const systemPrompt = agent?.system_prompt || GENERIC_SYSTEM_PROMPT;
 
-  const providerName = agent?.provider ?? config.defaultProvider;
+  const { providerName, model } = resolveAgentRouting(agent, config, request.model);
   const provider = config.providers[providerName];
   if (!provider) {
     throw new GatewayError(
@@ -135,7 +136,6 @@ async function* generate(opts: RunnerOpts): AsyncGenerator<OpenAIChunk> {
     );
   }
 
-  const model = request.model || agent?.default_model || provider.defaultModel;
   const chatId = `chatcmpl-${ulid()}`;
   const created = Math.floor(Date.now() / 1000);
   const tCtx = createTranslateContext({ id: chatId, created, model, showToolCalls: request.showToolCalls });

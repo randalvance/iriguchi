@@ -1,0 +1,41 @@
+---
+import "../styles/base.css";
+
+interface Props {
+  title: string;
+  /** Which nav item is current. */
+  section: "chat" | "agents";
+}
+
+const { title, section } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · iriguchi</title>
+    <meta name="description" content="iriguchi gateway console" />
+    <!-- The design system is dark only; declaring it stops form controls and
+         scrollbars from rendering in the UA's light defaults. -->
+    <meta name="color-scheme" content="dark" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <a class="app-brand" href={`${base}/`}>iriguchi</a>
+        <nav class="app-nav" aria-label="Sections">
+          <a href={`${base}/`} aria-current={section === "chat" ? "page" : undefined}>Chat</a>
+          <a href={`${base}/agents/`} aria-current={section === "agents" ? "page" : undefined}>
+            Agents
+          </a>
+        </nav>
+      </header>
+      <div class="app-body">
+        <slot />
+      </div>
+    </div>
+  </body>
+</html>

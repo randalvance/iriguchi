@@ -1,0 +1,263 @@
+---
+import Base from "../layouts/Base.astro";
+---
+
+<Base title="Agents" section="agents">
+  <main class="app-main">
+    <div class="container split">
+      <section class="card" aria-label="Agents">
+        <div class="card-header">
+          <h2 class="card-title">Agents</h2>
+          <span class="tag" id="agent-count">—</span>
+        </div>
+        <div class="list" id="agent-list">
+          <div class="card-body">
+            <div class="skeleton" style="height: 1rem; margin-bottom: .5rem"></div>
+            <div class="skeleton" style="height: 1rem; width: 70%"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="detail" aria-label="Agent detail" aria-live="polite">
+        <div class="empty">
+          <p class="empty-title">Select an agent</p>
+          <p class="empty-body">Its tools, MCP servers, skills, and connection health appear here.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+</Base>
+
+<script>
+  import {
+    api,
+    ApiError,
+    relativeTime,
+    type AgentSummary,
+    type AgentDetail,
+    type McpServerStatus,
+  } from "../lib/api";
+
+  const list = document.getElementById("agent-list") as HTMLElement;
+  const count = document.getElementById("agent-count") as HTMLElement;
+  const detail = document.getElementById("detail") as HTMLElement;
+
+  let agents: AgentSummary[] = [];
+  /** Connection status by URL — one row per connection, shared across agents. */
+  let statuses = new Map<string, McpServerStatus>();
+  let selected: string | null = null;
+
+  const escape = (s: string) =>
+    s.replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+    );
+
+  function errorBlock(where: string, err: unknown): string {
+    const message = err instanceof ApiError ? err.message : String(err);
+    return `<div class="alert alert-error"><div><strong>${escape(where)}</strong><br />${escape(message)}</div></div>`;
+  }
+
+  function statusPill(status: McpServerStatus | undefined): string {
+    // `unknown` is a real state, not a loading state: nothing has looked yet.
+    const state = status?.status ?? "unknown";
+    const label = { ok: "ok", stale: "stale", unreachable: "unreachable", unknown: "unknown" }[state];
+    return `<span class="status status-${state}">${label}</span>`;
+  }
+
+  function statusDetail(status: McpServerStatus | undefined): string {
+    if (!status) return `<span class="u-meta">never contacted</span>`;
+    const bits: string[] = [];
+    if (status.tool_count !== null) bits.push(`${status.tool_count} tools`);
+    if (status.discovered_at !== null) {
+      bits.push(`discovered ${relativeTime(status.discovered_at)}`);
+    }
+    if (status.status === "unknown") bits.push("never contacted");
+    if (status.status === "unreachable" && status.error_at !== null) {
+      bits.push(`failed ${relativeTime(status.error_at)}`);
+    }
+    const meta = `<span class="u-meta">${escape(bits.join(" · "))}</span>`;
+    if (status.status === "unreachable" && status.error) {
+      return `${meta}<div class="alert alert-error" style="margin-top:var(--space-2)">${escape(status.error)}</div>`;
+    }
+    return meta;
+  }
+
+  function renderList() {
+    count.textContent = String(agents.length);
+    if (agents.length === 0) {
+      list.innerHTML = `<div class="empty"><p class="empty-title">No agents registered</p><p class="empty-body">Register an app with the gateway and its agents appear here.</p></div>`;
+      return;
+    }
+    list.innerHTML = agents
+      .map(
+        (a) => `
+        <button class="list-item" role="option" data-agent="${escape(a.id)}"
+                aria-selected="${a.id === selected}">
+          <div class="u-mono">${escape(a.id)}</div>
+          <div class="u-meta u-truncate">${escape(a.app_name)} · ${escape(a.model)}</div>
+          <div class="u-meta">${a.api_call_tool_count} tools · ${a.mcp_server_count} mcp · ${a.skill_count} skills</div>
+        </button>`,
+      )
+      .join("");
+
+    for (const button of list.querySelectorAll<HTMLElement>("[data-agent]")) {
+      button.addEventListener("click", () => select(button.dataset.agent!));
+    }
+  }
+
+  function renderDetail(agent: AgentDetail) {
+    const tools = agent.api_call_tools.length
+      ? `<div class="scroll-x"><table class="table">
+           <thead><tr><th>Tool</th><th>Endpoint</th><th>Description</th></tr></thead>
+           <tbody>${agent.api_call_tools
+             .map(
+               (t) => `<tr>
+                 <td class="u-mono">${escape(t.name)}</td>
+                 <td><span class="method">${escape(t.method)}</span> <span class="u-mono">${escape(t.path)}</span></td>
+                 <td class="u-muted">${escape(t.description)}</td>
+               </tr>`,
+             )
+             .join("")}</tbody></table></div>`
+      : `<p class="u-meta">No api_call tools declared.</p>`;
+
+    const servers = agent.mcp_servers.length
+      ? agent.mcp_servers
+          .map((s) => {
+            const status = statuses.get(s.url);
+            const headers = s.header_names.length
+              ? s.header_names.map((h) => `<span class="tag">${escape(h)}</span>`).join(" ")
+              : `<span class="u-meta">none</span>`;
+            const allowlist =
+              s.allowed_tools === null
+                ? `<span class="u-meta">all discovered</span>`
+                : s.allowed_tools.map((t) => `<span class="tag">${escape(t)}</span>`).join(" ") ||
+                  `<span class="u-meta">none (parked)</span>`;
+            return `<div class="card" style="margin-bottom:var(--space-3)">
+              <div class="card-header">
+                <div>
+                  <span class="u-mono">${escape(s.name)}</span>
+                  ${statusPill(status)}
+                </div>
+                <button class="btn btn-secondary btn-sm" data-probe="${escape(s.name)}">Probe</button>
+              </div>
+              <div class="card-body">
+                <dl class="kv">
+                  <dt>URL</dt><dd class="u-mono">${escape(s.url)}</dd>
+                  <dt>Headers</dt><dd>${headers}</dd>
+                  <dt>Exposed tools</dt><dd>${allowlist}</dd>
+                  <dt>Status</dt><dd data-status-for="${escape(s.name)}">${statusDetail(status)}</dd>
+                </dl>
+              </div>
+            </div>`;
+          })
+          .join("")
+      : `<p class="u-meta">No MCP servers declared.</p>`;
+
+    const skills = agent.skills.length
+      ? agent.skills
+          .map((s) => `<span class="tag">${escape(s.name)} · ${s.source}</span>`)
+          .join(" ")
+      : `<span class="u-meta">None.</span>`;
+
+    detail.innerHTML = `
+      <div class="card" style="margin-bottom:var(--space-4)">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title u-mono">${escape(agent.id)}</h2>
+            <p class="u-meta">${escape(agent.name)} · ${escape(agent.app_name)}</p>
+          </div>
+          <div><span class="tag tag-accent">${escape(agent.provider)}</span> <span class="tag">${escape(agent.model)}</span></div>
+        </div>
+        <div class="card-body">
+          <p class="u-muted" style="margin-bottom:var(--space-4)">${escape(agent.description)}</p>
+          <dl class="kv">
+            <dt>App</dt><dd class="u-mono">${escape(agent.app_id)}</dd>
+            <dt>Base URL</dt><dd class="u-mono">${escape(agent.app_base_url)}</dd>
+            <dt>Skills</dt><dd>${skills}</dd>
+          </dl>
+          <details class="disclosure" style="margin-top:var(--space-4)">
+            <summary>System prompt</summary>
+            <div class="disclosure-body"><pre>${escape(agent.system_prompt)}</pre></div>
+          </details>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:var(--space-4)">
+        <div class="card-header"><h3 class="card-title">api_call tools</h3><span class="tag">${agent.api_call_tools.length}</span></div>
+        <div class="card-body">${tools}</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">MCP servers</h3><span class="tag">${agent.mcp_servers.length}</span></div>
+        <div class="card-body">${servers}</div>
+      </div>`;
+
+    for (const button of detail.querySelectorAll<HTMLButtonElement>("[data-probe]")) {
+      button.addEventListener("click", () => probe(agent.id, button.dataset.probe!, button));
+    }
+  }
+
+  /**
+   * Probing is always an explicit act. Loading the catalog reads cached state
+   * and dials nothing, so a page with ten dead servers still renders at once.
+   */
+  async function probe(agentId: string, serverName: string, button: HTMLButtonElement) {
+    button.dataset.busy = "true";
+    const cell = detail.querySelector<HTMLElement>(`[data-status-for="${CSS.escape(serverName)}"]`);
+    try {
+      const result = await api.probeMcpServer(agentId, serverName);
+      const merged: McpServerStatus = {
+        names: [serverName],
+        url: result.url,
+        header_names: [],
+        agents: [agentId],
+        status: result.status,
+        tool_count: result.tool_count,
+        discovered_at: result.discovered_at,
+        error: result.error,
+        error_at: result.status === "unreachable" ? result.probed_at : null,
+      };
+      statuses.set(result.url, merged);
+      const pill = cell?.closest(".card")?.querySelector(".status");
+      if (pill) pill.outerHTML = statusPill(merged);
+      if (cell) cell.innerHTML = statusDetail(merged);
+    } catch (err) {
+      if (cell) cell.innerHTML = errorBlock("Probe failed", err);
+    } finally {
+      button.dataset.busy = "false";
+    }
+  }
+
+  async function select(agentId: string) {
+    selected = agentId;
+    renderList();
+    detail.innerHTML = `<div class="card"><div class="card-body"><div class="skeleton" style="height:6rem"></div></div></div>`;
+    try {
+      renderDetail(await api.getAgent(agentId));
+    } catch (err) {
+      detail.innerHTML = errorBlock(`Could not load ${agentId}`, err);
+    }
+  }
+
+  async function load() {
+    // Statuses are optional context: if that read fails, every server simply
+    // reads as `unknown` and the catalog is still worth showing.
+    try {
+      statuses = new Map((await api.listMcpServers()).servers.map((s) => [s.url, s]));
+    } catch {
+      statuses = new Map();
+    }
+
+    try {
+      agents = await api.listAgents();
+    } catch (err) {
+      list.innerHTML = errorBlock("Could not load the agent catalog", err);
+      count.textContent = "—";
+      return;
+    }
+    renderList();
+    if (agents.length > 0) select(agents[0].id);
+  }
+
+  load();
+</script>

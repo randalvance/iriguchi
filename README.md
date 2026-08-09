@@ -163,6 +163,35 @@ IRI_MCP_ALLOWED_ORIGINS=http://finance-mcp.finance-app.svc.cluster.local:8080
 - **`listChanged` notifications.** A server may advertise the capability, but a stateless HTTP transport has no channel to deliver one. The TTL is the only invalidation, so a newly added tool is invisible for up to one cache period.
 - **Non-HTTP transports.** Streamable HTTP only — no stdio, no local servers.
 
+## Management UI
+
+A first-party client — a chat panel and a read-only agent catalog — served by the gateway at `/ui`. It is a separate Astro package in `ui/`, built to static assets, reading everything over HTTP from a private `/internal/*` surface. See [`ui/DESIGN.md`](ui/DESIGN.md) for its design system.
+
+```bash
+npm run ui:install     # once, installs the ui/ package's own dependencies
+npm run ui:build       # produces ui/dist
+IRI_UI_ENABLED=true npm run dev
+```
+
+Then open <http://localhost:4000/ui>.
+
+> **`/internal/*` is unauthenticated.** That is the design, not an oversight: the UI holds no credential, which is why it can never leak one. The consequence is that anyone who can reach the gateway port while `IRI_UI_ENABLED=true` can read your full agent catalog and spend provider tokens through the chat proxy. Enable it only when the port is confined to localhost or a trusted network — never on a published port. It is **off by default**, including in the container image, and turning it on logs a `warn` naming the exposure.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `IRI_UI_ENABLED` | `false` | Mounts `/ui` and `/internal/*`. Both are absent — plain `404` — when off. |
+| `IRI_UI_DIST` | `./ui/dist` | Where the built assets live. A missing build is reported with the command to fix it, not a bare `404`. |
+
+**What it shows.** The chat panel lists every registered agent with its resolved provider and model, and streams a reply from the one you pick. The catalog lists each agent's `api_call` tools (with method and path), MCP servers, skills, and system prompt. MCP servers carry a connection status — `ok`, `stale`, `unknown`, or `unreachable` — derived from the tool cache with no network I/O, so the page renders instantly even when every declared server is down. A per-server **Probe** button forces a live `tools/list` when you actually want to know.
+
+`unknown` and `unreachable` are different answers: the first means no run has ever needed that server and nobody has probed it, the second means the last attempt failed and carries the error.
+
+**What it deliberately cannot do.** Nothing in the UI writes. Registration, manifest refresh, and deletion stay on `/apps/*` behind an app token; providers and limits stay in the environment. There is no server-side conversation history — a chat thread lives in the browser tab and ends with it.
+
+**How chat reaches the provider.** The browser posts to `POST /internal/chat`, which runs the same agent `/v1/chat/completions` runs and streams OpenAI-shaped SSE back. The gateway supplies its own credentials. `IRI_API_KEY` never reaches the browser — a page with no authentication that also held that key would hand it to anyone who could load the page, which is strictly worse than the unauthenticated surface itself.
+
+**Working on the UI.** `npm run ui:dev` starts Astro's own dev server on port 4321 with hot reload; it reaches `/internal/*` cross-origin, so run the gateway alongside it. The container image builds `ui/dist` in its own stage and copies only the output, so no frontend toolchain ships in the runtime layer.
+
 ## Tests
 
 ```bash
@@ -199,9 +228,14 @@ See `docs/superpowers/specs/2026-06-01-iriguchi-ai-gateway-design.md` for the fu
 
 ```
 src/
-├── server.ts               # Hono app, startup
+├── server.ts               # Hono app, startup, conditional /ui + /internal mounts
 ├── routes/openai.ts        # /v1/* — chat + models
+├── routes/internal.ts      # /internal/* — catalog, MCP status, chat proxy (UI only)
+├── routes/chat-run.ts      # SSE response machinery shared by /v1 and /internal
 ├── routes/registration.ts  # /apps/* — register, refresh, delete
+├── internal/
+│   ├── catalog.ts          # Registry → UI payloads; the redaction boundary
+│   └── mcp-status.ts       # Connection status over the tool cache, plus probe
 ├── agent/
 │   ├── runner.ts           # Wraps Claude Agent SDK query()
 │   ├── tools.ts            # Dispatch by tool type; api_call → HTTP
@@ -217,4 +251,12 @@ src/
 ├── auth.ts                 # Bearer middleware
 ├── config.ts               # Env loader
 └── logger.ts               # Structured JSON logger
+
+ui/                         # Astro static client, built to ui/dist
+├── DESIGN.md               # Design system: tokens, components, a11y rules
+└── src/
+    ├── styles/             # tokens.css (every visual decision) + base.css
+    ├── layouts/Base.astro  # App shell
+    ├── lib/api.ts          # Typed /internal/* client + SSE reader
+    └── pages/              # index.astro (chat), agents.astro (catalog)
 ```

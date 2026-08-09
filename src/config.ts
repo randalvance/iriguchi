@@ -29,6 +29,17 @@ export type Config = {
    * out to, but requiring it would break every deployment that predates it.
    */
   mcpAllowedOrigins: string[];
+  /**
+   * Whether to serve the management UI and the `/internal/*` surface it reads.
+   *
+   * Defaults to false, and that default is load-bearing rather than cautious.
+   * `/internal/*` carries no credential by design, and the container publishes
+   * the gateway port; an admin surface that appeared there without being asked
+   * for would be the image choosing an exposure on the operator's behalf.
+   */
+  uiEnabled: boolean;
+  /** Directory holding the built UI assets. Only read when `uiEnabled`. */
+  uiDist: string;
   dbPath: string;
   tmpDir: string;
   providers: Record<string, Provider>;
@@ -49,6 +60,27 @@ function intVar(env: Record<string, string | undefined>, key: string, fallback: 
     throw new Error(`Invalid integer for ${key}: ${raw}`);
   }
   return n;
+}
+
+/**
+ * Parse a boolean flag.
+ *
+ * Only the listed spellings are accepted; anything else throws rather than
+ * falling back to the default. A typo in a flag that gates an unauthenticated
+ * surface must not be able to silently mean "off" *or* "on" — the operator has
+ * to be told which one they asked for.
+ */
+function boolVar(
+  env: Record<string, string | undefined>,
+  key: string,
+  fallback: boolean,
+): boolean {
+  const raw = env[key];
+  if (raw === undefined || raw === "") return fallback;
+  const normalized = raw.trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off"].includes(normalized)) return false;
+  throw new Error(`Invalid boolean for ${key}: ${raw}; expected true or false`);
 }
 
 /**
@@ -189,6 +221,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     requestTimeoutMs: intVar(env, "IRI_REQUEST_TIMEOUT_MS", 300000),
     mcpCacheTtlMs: intVar(env, "IRI_MCP_CACHE_TTL_MS", 300000),
     mcpAllowedOrigins: parseAllowedOrigins(env.IRI_MCP_ALLOWED_ORIGINS),
+    uiEnabled: boolVar(env, "IRI_UI_ENABLED", false),
+    uiDist: env.IRI_UI_DIST || "./ui/dist",
     dbPath: env.IRI_DB_PATH || "./iriguchi.db",
     tmpDir: env.IRI_TMP_DIR || "./.iri-tmp",
     providers,

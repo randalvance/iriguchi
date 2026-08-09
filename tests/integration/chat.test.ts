@@ -35,6 +35,8 @@ const baseCfg = () => ({
   } as Record<string, { name: string; apiKey: string; baseUrl: string; defaultModel: string; authStyle: "api_key" }>,
   defaultProvider: "anthropic",
   apiKey: "client-key",
+  uiEnabled: false,
+  uiDist: "./ui/dist",
   registrationSecret: "reg",
 });
 
