@@ -8,8 +8,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node --watch src/server.ts",
-    "start": "node src/server.ts",
+    "dev": "node --env-file-if-exists=.env --watch src/server.ts",
+    "start": "node --env-file-if-exists=.env src/server.ts",
     "test": "vitest run",
     "test:e2e": "IRI_E2E=1 vitest run tests/e2e --testTimeout 120000",
     "typecheck": "tsc --noEmit",
