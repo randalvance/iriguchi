@@ -1,7 +1,6 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { readFile } from "node:fs/promises";
-import type { AddressInfo } from "node:net";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildManifest } from "./manifest.ts";
@@ -138,10 +137,28 @@ async function register(selfBaseUrl: string) {
   console.error("[weather-app] could not register with gateway after 5 attempts");
 }
 
-const server = serve({ port: PORT, fetch: app.fetch });
-// Resolve the base URL only after binding, so WEATHER_PORT=0 (ephemeral port)
-// advertises the port we actually got rather than a literal 0.
-const { port } = server.address() as AddressInfo;
-const selfBaseUrl = process.env.WEATHER_BASE_URL ?? `http://localhost:${port}`;
-console.log(`[weather-app] listening on ${selfBaseUrl}`);
-void register(selfBaseUrl);
+// Registration waits for the listening callback rather than reading
+// server.address() straight after serve(). Binding is asynchronous, so the
+// address is null until it completes — and it never completes when the port
+// is taken, which is exactly what happens under `node --watch` while the
+// previous process is still shutting down. Reading it synchronously turned
+// that ordinary restart into a crash loop.
+const server = serve({ port: PORT, fetch: app.fetch }, (info) => {
+  // WEATHER_PORT=0 asks for an ephemeral port, so advertise the one actually
+  // granted rather than a literal 0.
+  const selfBaseUrl = process.env.WEATHER_BASE_URL ?? `http://localhost:${info.port}`;
+  console.log(`[weather-app] listening on ${selfBaseUrl}`);
+  void register(selfBaseUrl);
+});
+
+server.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `[weather-app] port ${PORT} is already in use — another copy is probably ` +
+        `still running. Stop it, or set WEATHER_PORT to a free port.`,
+    );
+  } else {
+    console.error(`[weather-app] server error: ${err.message}`);
+  }
+  process.exit(1);
+});
