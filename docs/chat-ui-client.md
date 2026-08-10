@@ -19,7 +19,7 @@ The package is not on a registry, and **it cannot be installed from a git refere
 
 ```bash
 # Do NOT do this — installs the gateway, not the client.
-npm install "git+https://github.com/<org>/iriguchi.git#chat-ui-v0.1.0"
+npm install "git+https://github.com/<org>/iriguchi.git#chat-ui-v0.2.0"
 ```
 
 The subdirectory form (`#<tag>::path:packages/chat-ui`) does not rescue it. On npm 11 it still unpacks the gateway — into a directory *named* `node_modules/@iriguchi/chat-ui`, which is why the failure is silent. You get no install error; you get a missing-export or missing-module error later, somewhere unrelated. If you suspect you have hit this, the one-line check is:
@@ -41,7 +41,7 @@ npm run chat-ui:pack
 That builds the package and writes `iriguchi-chat-ui-<version>.tgz` at the repository root. Use the script rather than packing by hand: it expands to `npm pack ./packages/chat-ui`, and the by-path argument is load-bearing — `npm pack --prefix packages/chat-ui` ignores the prefix and packs the gateway, the same trap in a different costume. Then, in the consumer:
 
 ```bash
-npm install ./iriguchi-chat-ui-0.1.0.tgz
+npm install ./iriguchi-chat-ui-0.2.0.tgz
 ```
 
 A tarball carries a prebuilt `dist/`, so nothing has to compile at install time. That matters beyond convenience: npm 11 blocks dependency lifecycle scripts by default, so any install path that relies on `prepare` to compile the package now produces an empty install. Publish the tarball as a release asset and consumers can install the URL directly; pin the file, not a branch.
@@ -186,6 +186,27 @@ const { messages, streaming, send, cancel, clear } = useIriChat();
 
 Each message carries a `status` — `streaming`, `complete`, `cancelled`, or `error` — which is enough to render every case the panel renders.
 
+## Step 6 — React to tool activity
+
+When an agent's tool *writes* something your page is displaying, the page has to refetch when the write lands — not when the model stops talking. A long run over a large statement would otherwise sit frozen and then jump.
+
+Ask the gateway for tool events at the provider, and subscribe from whichever component owns the data:
+
+```tsx
+<IriguchiChatProvider endpoint="/api/ask-ai" agent="my-chat" showToolCalls>
+
+// in the page, not the app root — it mounts and unmounts with the route
+useIriToolEvents((event) => {
+  if (event.type === "result" && !event.is_error) void refetchDraft();
+});
+```
+
+The run reports one `call` event per tool invocation (`id`, `name`, `arguments`) and one `result` when it finishes (`id`, `is_error`). Pair them **by `id`, never by position** — tools can be invoked in parallel and finish in any order.
+
+`result` carries no payload. The tool's return value is data the model asked for; it can be large, and putting it in the browser widens what the stream exposes for no gain. If your page needs the new state, refetch it from your own API — which is what it was going to do anyway.
+
+`showToolCalls` is mount-time: the chat is rebuilt only when `endpoint` or `agent` change, since rebuilding drops the conversation. With the flag off, the request body and the stream your client sees are unchanged from a client that has no notion of tool events.
+
 ## Theming
 
 The stylesheet is self-contained: no reset, no element selectors, every class prefixed `iri-chat-`, so loading it cannot change one of your elements. Every value is a custom property, so retheming is redefinition rather than override:
@@ -204,7 +225,7 @@ Defaults follow [the Iriguchi design language](../ui/DESIGN.md). Motion collapse
 ## What the panel does not do
 
 - **No markdown.** Assistant text renders as literal characters with whitespace preserved, which also means there is no markup to inject.
-- **No tool-call trace.** The transcript shows the reply, not the run.
+- **No tool-call trace.** The transcript shows the reply, not the run. A host that needs to *act* on the run subscribes with `useIriToolEvents` (see Step 6); nothing about it is rendered in the panel.
 - **No actions.** The chat cannot yet drive your UI — apply a filter, open a modal. That needs an interactive run protocol in the gateway, since the gateway has no route back into the user's tab. The client's registration types leave room for it; nothing about it is on the wire today.
 
 ## Conversation storage

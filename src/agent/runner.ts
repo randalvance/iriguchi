@@ -351,7 +351,14 @@ async function* adaptSdkStream(stream: AsyncIterable<any>): AsyncGenerator<SdkEv
     } else if (msg?.type === "user" && msg.message?.content) {
       for (const block of msg.message.content) {
         if (block.type === "tool_result") {
-          yield { type: "tool_result", id: block.tool_use_id, result: block.content };
+          yield {
+            type: "tool_result",
+            id: block.tool_use_id,
+            result: block.content,
+            // Normalized here so the translate layer never sees `undefined`:
+            // a failed write must not reach a client looking like a clean one.
+            is_error: block.is_error === true,
+          };
         }
       }
     }

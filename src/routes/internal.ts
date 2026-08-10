@@ -5,7 +5,12 @@ import type { Store } from "../registry/store.ts";
 import type { Logger } from "../logger.ts";
 import type { McpRuntime } from "../agent/mcp/discovery.ts";
 import { GatewayError } from "../agent/runner.ts";
-import { streamChatRun, validateMessages, gatewayErrorResponse } from "./chat-run.ts";
+import {
+  streamChatRun,
+  validateMessages,
+  gatewayErrorResponse,
+  resolveShowToolCalls,
+} from "./chat-run.ts";
 import { listAgentSummaries, detailAgent, findAgent } from "../internal/catalog.ts";
 import {
   collectMcpStatuses,
@@ -150,7 +155,7 @@ export function internalRoutes(deps: {
         // spends tokens on.
         model: null,
         messages,
-        showToolCalls: c.req.query("iri_show_tool_calls") === "true",
+        showToolCalls: resolveShowToolCalls(c, body),
       },
     };
 

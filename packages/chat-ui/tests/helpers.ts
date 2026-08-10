@@ -19,6 +19,42 @@ export function chunk(text: string): string {
   })}\n\n`;
 }
 
+/** A gateway chunk announcing a tool the agent invoked. */
+export function toolCallChunk(id: string, name: string, args: unknown = {}): string {
+  return `data: ${JSON.stringify({
+    id: "chatcmpl-test",
+    object: "chat.completion.chunk",
+    choices: [
+      {
+        index: 0,
+        delta: {
+          tool_calls: [
+            { index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } },
+          ],
+        },
+      },
+    ],
+  })}\n\n`;
+}
+
+/** A gateway chunk announcing that a tool invocation finished. */
+export function toolResultChunk(id: string, isError = false): string {
+  return `data: ${JSON.stringify({
+    id: "chatcmpl-test",
+    object: "chat.completion.chunk",
+    choices: [{ index: 0, delta: { iri_tool_result: { id, is_error: isError } } }],
+  })}\n\n`;
+}
+
+/** A chunk carrying an arbitrary delta, for the malformed-shape tests. */
+export function deltaChunk(delta: unknown): string {
+  return `data: ${JSON.stringify({
+    id: "chatcmpl-test",
+    object: "chat.completion.chunk",
+    choices: [{ index: 0, delta }],
+  })}\n\n`;
+}
+
 export const DONE = "data: [DONE]\n\n";
 
 export function sseResponse(frames: string[]): Response {

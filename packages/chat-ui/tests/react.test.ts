@@ -4,8 +4,21 @@ import { act } from "react";
 import { createElement, useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AskAiPanel } from "../src/react/panel.js";
-import { IriguchiChatProvider, useIriChat, useIriContext } from "../src/react/index.js";
-import { chunk, DONE, memoryStorage, sentBodies, sseResponse } from "./helpers.js";
+import {
+  IriguchiChatProvider,
+  useIriChat,
+  useIriContext,
+  useIriToolEvents,
+} from "../src/react/index.js";
+import {
+  chunk,
+  DONE,
+  memoryStorage,
+  sentBodies,
+  sseResponse,
+  toolCallChunk,
+  toolResultChunk,
+} from "./helpers.js";
 
 afterEach(cleanup);
 
@@ -163,5 +176,143 @@ describe("react binding", () => {
 
   it("fails loudly when a hook is used outside the provider", () => {
     expect(() => render(createElement(HooksHost))).toThrowError(/IriguchiChatProvider/);
+  });
+});
+
+describe("useIriToolEvents", () => {
+  /** A consumer one level deep, exactly where finance-app's page sits. */
+  function ToolConsumer({ onEvent }: { onEvent: (label: string) => void }) {
+    useIriToolEvents((event) =>
+      onEvent(event.type === "call" ? `call:${event.id}:${event.name}` : `result:${event.id}`),
+    );
+    return null;
+  }
+
+  function toolStream() {
+    return vi.fn(async () =>
+      sseResponse([
+        toolCallChunk("tu_1", "apply_categories", { rows: 2 }),
+        toolResultChunk("tu_1"),
+        chunk("Done."),
+        DONE,
+      ]),
+    ) as unknown as typeof fetch;
+  }
+
+  it("delivers the call and then the result to a nested consumer", async () => {
+    const seen: string[] = [];
+    const fetchImpl = toolStream();
+    render(
+      provider(
+        createElement(
+          "div",
+          null,
+          createElement(HooksHost),
+          createElement(ToolConsumer, { onEvent: (l) => seen.push(l) }),
+        ),
+        fetchImpl,
+      ),
+    );
+
+    act(() => screen.getByText("send").click());
+    await settle();
+
+    expect(seen).toEqual(["call:tu_1:apply_categories", "result:tu_1"]);
+  });
+
+  it("stops delivering once the consumer unmounts", async () => {
+    const seen: string[] = [];
+    const fetchImpl = toolStream();
+
+    function Host() {
+      const [mounted, setMounted] = useState(true);
+      return createElement(
+        "div",
+        null,
+        createElement(HooksHost),
+        createElement("button", { onClick: () => setMounted(false) }, "unmount"),
+        mounted ? createElement(ToolConsumer, { onEvent: (l: string) => seen.push(l) }) : null,
+      );
+    }
+
+    render(provider(createElement(Host), fetchImpl));
+    act(() => screen.getByText("unmount").click());
+    act(() => screen.getByText("send").click());
+    await settle();
+
+    expect(seen).toEqual([]);
+  });
+
+  it("keeps one registration across renders and uses the latest closure", async () => {
+    const seen: string[] = [];
+    const fetchImpl = toolStream();
+    let rerender: () => void = () => {};
+
+    function Host() {
+      const [tick, setTick] = useState(0);
+      rerender = () => setTick((t) => t + 1);
+      return createElement(
+        "div",
+        null,
+        createElement(HooksHost),
+        // A brand new closure on every render, capturing the current tick.
+        createElement(ToolConsumer, { onEvent: (l: string) => seen.push(`${tick}:${l}`) }),
+      );
+    }
+
+    render(provider(createElement(Host), fetchImpl));
+    act(() => rerender());
+    act(() => rerender());
+    act(() => screen.getByText("send").click());
+    await settle();
+
+    // Registered once — two events, not six — and reported by the newest closure.
+    expect(seen).toEqual(["2:call:tu_1:apply_categories", "2:result:tu_1"]);
+  });
+
+  it("delivers to every mounted consumer", async () => {
+    const a: string[] = [];
+    const b: string[] = [];
+    const fetchImpl = toolStream();
+    render(
+      provider(
+        createElement(
+          "div",
+          null,
+          createElement(HooksHost),
+          createElement(ToolConsumer, { onEvent: (l: string) => a.push(l) }),
+          createElement(ToolConsumer, { onEvent: (l: string) => b.push(l) }),
+        ),
+        fetchImpl,
+      ),
+    );
+
+    act(() => screen.getByText("send").click());
+    await settle();
+
+    expect(a).toHaveLength(2);
+    expect(b).toEqual(a);
+  });
+
+  it("asks the gateway for tool visibility only when the provider says so", async () => {
+    const fetchImpl = vi.fn(async () => sseResponse([chunk("ok"), DONE]));
+    render(
+      createElement(
+        IriguchiChatProvider,
+        {
+          endpoint: "/api/ask-ai",
+          agent: "weather-bot",
+          fetchImpl: fetchImpl as unknown as typeof fetch,
+          storage: memoryStorage(),
+          showToolCalls: true,
+        },
+        createElement(HooksHost),
+      ),
+    );
+
+    act(() => screen.getByText("send").click());
+    await settle();
+
+    expect(sentBodies(fetchImpl)[0]).toMatchObject({ iri_show_tool_calls: true });
   });
 });

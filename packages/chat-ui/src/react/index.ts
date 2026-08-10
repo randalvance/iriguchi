@@ -8,7 +8,13 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { createChat, type Chat, type ChatOptions } from "../core/chat.js";
+import {
+  createChat,
+  type Chat,
+  type ChatOptions,
+  type ToolEvent,
+  type ToolEventHandler,
+} from "../core/chat.js";
 import type { ChatMessage, ContextCallback, ContextSliceOptions } from "../core/types.js";
 
 const ChatContext = createContext<Chat | null>(null);
@@ -17,6 +23,15 @@ export interface IriguchiChatProviderProps extends Omit<ChatOptions, "endpoint" 
   /** The host's own proxy route — not the gateway. */
   endpoint: string;
   agent: string;
+  /**
+   * Ask the gateway to report tool activity, observed with
+   * {@link useIriToolEvents}.
+   *
+   * Effectively mount-time: the chat is rebuilt only when `endpoint` or
+   * `agent` change, so flipping this afterwards has no effect. That is the
+   * right trade — rebuilding would drop the conversation.
+   */
+  showToolCalls?: boolean;
   children?: ReactNode;
 }
 
@@ -65,6 +80,25 @@ export function useIriContext(
   }, [chat, key, truncate, timeoutMs]);
 }
 
+/**
+ * Observes the run's tool activity: one `call` event per tool the agent
+ * invoked, then one `result` event when it finishes, pairable by `id`.
+ *
+ * For the page that owns the data a tool just wrote — it refetches on the
+ * result rather than waiting for the model to stop talking. Registration is
+ * per-consumer and needs nothing from the app root; the handler is read
+ * through a ref, so a new closure each render does not churn it.
+ *
+ * Silent unless the provider was given `showToolCalls`.
+ */
+export function useIriToolEvents(handler: ToolEventHandler): void {
+  const chat = useIriguchiChatInstance();
+  const latest = useRef(handler);
+  latest.current = handler;
+
+  useEffect(() => chat.subscribeToolEvents((event) => latest.current(event)), [chat]);
+}
+
 export interface UseIriChat {
   messages: readonly ChatMessage[];
   streaming: boolean;
@@ -95,5 +129,6 @@ export function useIriChat(): UseIriChat {
   };
 }
 
-export type { Chat, ChatOptions, ChatError } from "../core/chat.js";
+export type { Chat, ChatOptions, ChatError, ToolEvent, ToolEventHandler } from "../core/chat.js";
+export type { ToolCallEvent, ToolResultEvent } from "../core/transport.js";
 export type { ChatMessage, TurnStatus } from "../core/types.js";
