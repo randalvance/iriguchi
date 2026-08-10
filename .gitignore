@@ -13,6 +13,9 @@ build/
 coverage/
 .iri-tmp/
 
+# `npm run chat-ui:pack` writes the consumer tarball here.
+*.tgz
+
 # UI build output and Astro's generated type cache. `dist/` above already
 # covers ui/dist; these are the ones it does not.
 .astro/
