@@ -3,8 +3,19 @@ import {
   buildRequestBody,
   ChatRequestError,
   streamChatCompletion,
+  type ToolCallEvent,
+  type ToolResultEvent,
 } from "../src/core/transport.js";
-import { chunk, controlledStream, DONE, rejection, sseResponse } from "./helpers.js";
+import {
+  chunk,
+  controlledStream,
+  deltaChunk,
+  DONE,
+  rejection,
+  sseResponse,
+  toolCallChunk,
+  toolResultChunk,
+} from "./helpers.js";
 
 const base = { endpoint: "/api/ask-ai", agent: "weather-bot" };
 
@@ -163,5 +174,141 @@ describe("streaming", () => {
       { ...base, messages: [], fetchImpl, signal: controller.signal },
       { onDelta: () => {} },
     );
+  });
+});
+
+describe("tool events", () => {
+  /** Records deltas and tool events in the single order they arrived in. */
+  function collectAll() {
+    const seen: string[] = [];
+    return {
+      seen,
+      handlers: {
+        onDelta: (text: string) => seen.push(`delta:${text}`),
+        onToolCall: (call: ToolCallEvent) => seen.push(`call:${call.id}:${call.name}`),
+        onToolResult: (result: ToolResultEvent) =>
+          seen.push(`result:${result.id}:${result.is_error}`),
+      },
+    };
+  }
+
+  it("asks for tool visibility only when told to", () => {
+    expect("iri_show_tool_calls" in buildRequestBody({ ...base, messages: [] })).toBe(false);
+    expect(
+      "iri_show_tool_calls" in buildRequestBody({ ...base, messages: [], showToolCalls: false }),
+    ).toBe(false);
+    expect(buildRequestBody({ ...base, messages: [], showToolCalls: true })).toMatchObject({
+      iri_show_tool_calls: true,
+    });
+  });
+
+  it("reports a call and then its result, in stream order", async () => {
+    const { seen, handlers } = collectAll();
+    const fetchImpl = vi.fn(async () =>
+      sseResponse([
+        toolCallChunk("tu_1", "apply_categories", { rows: 2 }),
+        toolResultChunk("tu_1"),
+        chunk("Done."),
+        DONE,
+      ]),
+    );
+
+    await streamChatCompletion({ ...base, messages: [], fetchImpl }, handlers);
+
+    expect(seen).toEqual([
+      "call:tu_1:apply_categories",
+      "result:tu_1:false",
+      "delta:Done.",
+    ]);
+  });
+
+  it("carries the call's arguments through verbatim", async () => {
+    const calls: ToolCallEvent[] = [];
+    const fetchImpl = vi.fn(async () =>
+      sseResponse([toolCallChunk("tu_1", "apply", { rows: [1, 2] }), DONE]),
+    );
+
+    await streamChatCompletion(
+      { ...base, messages: [], fetchImpl },
+      { onDelta: () => {}, onToolCall: (c) => calls.push(c) },
+    );
+
+    expect(JSON.parse(calls[0]!.arguments)).toEqual({ rows: [1, 2] });
+  });
+
+  it("reports a failed tool as is_error", async () => {
+    const { seen, handlers } = collectAll();
+    const fetchImpl = vi.fn(async () => sseResponse([toolResultChunk("tu_1", true), DONE]));
+
+    await streamChatCompletion({ ...base, messages: [], fetchImpl }, handlers);
+
+    expect(seen).toEqual(["result:tu_1:true"]);
+  });
+
+  it("is harmless when the caller supplied only onDelta", async () => {
+    const { seen, handlers } = collect();
+    const fetchImpl = vi.fn(async () =>
+      sseResponse([toolCallChunk("tu_1", "apply"), toolResultChunk("tu_1"), chunk("hi"), DONE]),
+    );
+
+    await streamChatCompletion({ ...base, messages: [], fetchImpl }, handlers);
+
+    expect(seen).toEqual(["hi"]);
+  });
+
+  it("skips malformed tool entries and keeps processing the stream", async () => {
+    const { seen, handlers } = collectAll();
+    const fetchImpl = vi.fn(async () =>
+      sseResponse([
+        deltaChunk({ tool_calls: "not-an-array" }),
+        deltaChunk({ tool_calls: [null, 7, {}, { function: {} }, { function: { name: "" } }] }),
+        deltaChunk({ iri_tool_result: "not-an-object" }),
+        chunk("still here"),
+        DONE,
+      ]),
+    );
+
+    await streamChatCompletion({ ...base, messages: [], fetchImpl }, handlers);
+
+    expect(seen).toEqual(["delta:still here"]);
+  });
+
+  it("reports an id-less call and result rather than dropping them", async () => {
+    const calls: ToolCallEvent[] = [];
+    const results: ToolResultEvent[] = [];
+    const fetchImpl = vi.fn(async () =>
+      sseResponse([
+        deltaChunk({ tool_calls: [{ index: 0, function: { name: "apply", arguments: "{}" } }] }),
+        deltaChunk({ iri_tool_result: { is_error: false } }),
+        DONE,
+      ]),
+    );
+
+    await streamChatCompletion(
+      { ...base, messages: [], fetchImpl },
+      { onDelta: () => {}, onToolCall: (c) => calls.push(c), onToolResult: (r) => results.push(r) },
+    );
+
+    expect(calls).toEqual([{ name: "apply", arguments: "{}" }]);
+    expect(results).toEqual([{ is_error: false }]);
+  });
+
+  it("does not let a throwing handler break the run", async () => {
+    const seen: string[] = [];
+    const fetchImpl = vi.fn(async () =>
+      sseResponse([toolResultChunk("tu_1"), chunk("after"), DONE]),
+    );
+
+    await streamChatCompletion(
+      { ...base, messages: [], fetchImpl },
+      {
+        onDelta: (text) => seen.push(text),
+        onToolResult: () => {
+          throw new Error("the consumer's refetch blew up");
+        },
+      },
+    );
+
+    expect(seen).toEqual(["after"]);
   });
 });

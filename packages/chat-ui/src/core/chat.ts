@@ -8,7 +8,12 @@ import {
   type StorageLike,
   type StorageLimits,
 } from "./storage.js";
-import { ChatRequestError, streamChatCompletion } from "./transport.js";
+import {
+  ChatRequestError,
+  streamChatCompletion,
+  type ToolCallEvent,
+  type ToolResultEvent,
+} from "./transport.js";
 import type { ChatMessage, SliceFailure, TruncationNotice } from "./types.js";
 
 export type ChatErrorPhase = "slice" | "context" | "request";
@@ -21,11 +26,28 @@ export interface ChatError {
   key?: string;
 }
 
+/**
+ * A tool the agent invoked, or the news that one finished. Handed to whatever
+ * subscribed through {@link Chat.subscribeToolEvents} — the panel does not
+ * render any of this.
+ */
+export type ToolEvent =
+  | ({ type: "call" } & ToolCallEvent)
+  | ({ type: "result" } & ToolResultEvent);
+
+export type ToolEventHandler = (event: ToolEvent) => void;
+
 export interface ChatOptions {
   /** The host's own route, never the gateway — the key stays server-side. */
   endpoint: string;
   agent: string;
   model?: string;
+  /**
+   * Ask the gateway to report the run's tool activity, delivered through
+   * `subscribeToolEvents`. Off by default, and when off the request body is
+   * unchanged from a client that has no notion of tool events.
+   */
+  showToolCalls?: boolean;
   maxContextBytes?: number;
   sliceTimeoutMs?: number;
   storage?: StorageLike | null;
@@ -40,6 +62,12 @@ export interface Chat {
   getMessages(): readonly ChatMessage[];
   isStreaming(): boolean;
   subscribe(listener: () => void): () => void;
+  /**
+   * Observe the run's tool activity as it happens — a page waiting on a write
+   * refetches when the result lands, not when the model stops talking.
+   * Delivers nothing unless the chat was created with `showToolCalls`.
+   */
+  subscribeToolEvents(handler: ToolEventHandler): () => void;
   send(text: string): Promise<void>;
   cancel(): void;
   clear(): void;
@@ -49,6 +77,9 @@ export function createChat(options: ChatOptions): Chat {
   const registry = new SliceRegistry();
   const storage = options.storage === undefined ? defaultStorage() : options.storage;
   const listeners = new Set<() => void>();
+  // Separate from `listeners`: those are store-changed notifications a
+  // component re-renders on, these are one-shot facts about the run.
+  const toolListeners = new Set<ToolEventHandler>();
 
   let messages: ChatMessage[] = loadThread(options.agent, storage).map((message) => ({
     ...message,
@@ -61,6 +92,18 @@ export function createChat(options: ChatOptions): Chat {
     // reference-comparing consumer sees the change.
     messages = [...messages];
     for (const listener of listeners) listener();
+  };
+  const emitToolEvent = (event: ToolEvent) => {
+    // One subscriber throwing must not cost the others their event, nor the
+    // turn its remaining text. The transport guards this too; this guards the
+    // fan-out between subscribers.
+    for (const handler of toolListeners) {
+      try {
+        handler(event);
+      } catch {
+        // The consumer's problem, not the run's.
+      }
+    }
   };
   const persist = () => saveThread(options.agent, messages, storage, options.storageLimits);
   const report = (error: ChatError) => options.onError?.(error);
@@ -85,6 +128,11 @@ export function createChat(options: ChatOptions): Chat {
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+
+    subscribeToolEvents(handler) {
+      toolListeners.add(handler);
+      return () => void toolListeners.delete(handler);
     },
 
     async send(text) {
@@ -146,6 +194,7 @@ export function createChat(options: ChatOptions): Chat {
             messages: messages.slice(0, -1),
             context,
             model: options.model,
+            showToolCalls: options.showToolCalls,
             signal,
             fetchImpl: options.fetchImpl,
           },
@@ -155,6 +204,8 @@ export function createChat(options: ChatOptions): Chat {
               if (last !== undefined) last.content += delta;
               emit();
             },
+            onToolCall: (call) => emitToolEvent({ type: "call", ...call }),
+            onToolResult: (result) => emitToolEvent({ type: "result", ...result }),
           },
         );
         finish("complete");

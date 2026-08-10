@@ -75,6 +75,62 @@ describe("translateSdkEvent", () => {
     });
   });
 
+  it("omits tool results by default", () => {
+    const out = translateSdkEvent(
+      { type: "tool_result", id: "tu_1", result: "sunny", is_error: false } as SdkEvent,
+      makeCtx(),
+    );
+    expect(out).toEqual([]);
+  });
+
+  it("emits iri_tool_result when showToolCalls=true", () => {
+    const out = translateSdkEvent(
+      { type: "tool_result", id: "tu_1", result: "sunny", is_error: false } as SdkEvent,
+      makeCtx({ showToolCalls: true }),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].choices[0].delta.iri_tool_result).toEqual({ id: "tu_1", is_error: false });
+  });
+
+  it("pairs a result with its call by id", () => {
+    const ctx = makeCtx({ showToolCalls: true });
+    const call = translateSdkEvent(
+      { type: "tool_use", id: "tu_7", name: "apply", input: {} } as SdkEvent,
+      ctx,
+    );
+    const result = translateSdkEvent(
+      { type: "tool_result", id: "tu_7", result: "ok", is_error: false } as SdkEvent,
+      ctx,
+    );
+    expect(result[0].choices[0].delta.iri_tool_result?.id).toBe(
+      call[0].choices[0].delta.tool_calls?.[0].id,
+    );
+  });
+
+  it("reports a failed tool as is_error", () => {
+    const out = translateSdkEvent(
+      { type: "tool_result", id: "tu_1", result: { error: "boom" }, is_error: true } as SdkEvent,
+      makeCtx({ showToolCalls: true }),
+    );
+    expect(out[0].choices[0].delta.iri_tool_result?.is_error).toBe(true);
+  });
+
+  it("never puts the tool's payload on the wire", () => {
+    const out = translateSdkEvent(
+      { type: "tool_result", id: "tu_1", result: { rows: ["secret-row"] } } as SdkEvent,
+      makeCtx({ showToolCalls: true }),
+    );
+    expect(JSON.stringify(out)).not.toContain("secret-row");
+  });
+
+  it("defaults is_error to false when the event omits it", () => {
+    const out = translateSdkEvent(
+      { type: "tool_result", id: "tu_1", result: "ok" } as SdkEvent,
+      makeCtx({ showToolCalls: true }),
+    );
+    expect(out[0].choices[0].delta.iri_tool_result?.is_error).toBe(false);
+  });
+
   it("emits finish chunk on done", () => {
     const out = translateSdkEvent({ type: "done", reason: "stop" } as SdkEvent, makeCtx());
     expect(out).toHaveLength(1);
@@ -111,6 +167,38 @@ describe("translateSdkEvent", () => {
     expect(a2[0].choices[0].delta.tool_calls?.[0].index).toBe(1);
     expect(b1[0].choices[0].delta.tool_calls?.[0].index).toBe(0);
     expect(b2[0].choices[0].delta.tool_calls?.[0].index).toBe(1);
+  });
+});
+
+describe("flag-off compatibility", () => {
+  it("a tool-invoking run streams the same bytes as before tool results existed", async () => {
+    const { formatSseChunk, DONE_SENTINEL } = await import("../../src/agent/openai-sse.ts");
+    const format = (events: SdkEvent[]) => {
+      const ctx = makeCtx();
+      return (
+        events
+          .flatMap((ev) => translateSdkEvent(ev, ctx))
+          .map(formatSseChunk)
+          .join("") + DONE_SENTINEL
+      );
+    };
+    // With the flag off, a run that invokes a tool must put the same bytes on
+    // the wire as the same run with its tool events elided — which is exactly
+    // what a client saw before this change.
+    const withTools = format([
+      { type: "stream_start" },
+      { type: "tool_use", id: "t1", name: "apply", input: { rows: 2 } },
+      { type: "tool_result", id: "t1", result: "ok", is_error: false },
+      { type: "text_chunk", text: "Categorized 2 rows." },
+      { type: "done", reason: "stop" },
+    ]);
+    const textOnly = format([
+      { type: "stream_start" },
+      { type: "text_chunk", text: "Categorized 2 rows." },
+      { type: "done", reason: "stop" },
+    ]);
+    expect(withTools).toBe(textOnly);
+    expect(withTools).not.toContain("iri_tool_result");
   });
 });
 
@@ -256,6 +344,28 @@ describe("aggregateChunks", () => {
     expect(calls?.[0].id).toBe("t1");
     expect(calls?.[0].function.name).toBe("f");
     expect(JSON.parse(calls![0].function.arguments)).toEqual({ a: 1 });
+  });
+
+  it("is unchanged by the presence of iri_tool_result chunks", () => {
+    // The aggregator reads `content` and `tool_calls` and ignores everything
+    // else; this is the assertion behind "provably derived from the same
+    // event sequence" now that the stream carries a third kind of delta.
+    const events: SdkEvent[] = [
+      { type: "stream_start" },
+      { type: "tool_use", id: "t1", name: "apply", input: { rows: 2 } },
+      { type: "text_chunk", text: "done." },
+      { type: "done", reason: "stop" },
+    ];
+    const withResults = run(
+      [
+        ...events.slice(0, 2),
+        { type: "tool_result", id: "t1", result: "ok", is_error: false },
+        ...events.slice(2),
+      ],
+      true,
+    );
+    const withoutResults = run(events, true);
+    expect(aggregateChunks(withResults)).toEqual(aggregateChunks(withoutResults));
   });
 
   it("throws on an empty chunk sequence", () => {

@@ -398,6 +398,150 @@ describe("POST /v1/chat/completions — non-streaming", () => {
     }
   });
 
+  /** A weather-bot run that calls its one tool, for the flag-resolution tests. */
+  async function toolRun(
+    body: Record<string, unknown>,
+    query = "",
+  ): Promise<{ status: number; json: any }> {
+    const fake = spinUpFakeAnthropic({
+      responses: [
+        [{ kind: "tool_use", id: "tu_1", name: "get_forecast", input: { location: "NYC" } }],
+        [{ kind: "text", text: "Sunny, 72°F." }],
+      ],
+    });
+    const appApp = new Hono();
+    appApp.post("/api/forecast", () => Response.json({ temp_f: 72, condition: "sunny" }));
+    const appServer = listen({ port: 0, fetch: appApp.fetch });
+    try {
+      registerWeatherBot(store, appServer.port);
+      const app = buildApp({ config: cfgFor(fake.port), store });
+      const res = await app.fetch(
+        chatRequest({ stream: false, iri_agent: "weather-bot", ...body }, query),
+      );
+      return { status: res.status, json: await res.json() };
+    } finally {
+      appServer.stop();
+      fake.stop();
+    }
+  }
+
+  it("surfaces tool calls from the body flag", async () => {
+    const { status, json } = await toolRun({ iri_show_tool_calls: true });
+    expect(status).toBe(200);
+    expect(json.choices[0].message.tool_calls).toHaveLength(1);
+    expect(json.choices[0].message.tool_calls[0].function.name).toBe("get_forecast");
+  });
+
+  it("body false beats query true", async () => {
+    const { status, json } = await toolRun(
+      { iri_show_tool_calls: false },
+      "?iri_show_tool_calls=true",
+    );
+    expect(status).toBe(200);
+    expect(json.choices[0].message).not.toHaveProperty("tool_calls");
+  });
+
+  it("a non-boolean body flag falls back to the query parameter", async () => {
+    // A display hint is not worth failing a run over.
+    const { status, json } = await toolRun(
+      { iri_show_tool_calls: "yes" },
+      "?iri_show_tool_calls=true",
+    );
+    expect(status).toBe(200);
+    expect(json.choices[0].message.tool_calls).toHaveLength(1);
+  });
+
+  it("streams a tool result event under the body flag", async () => {
+    const fake = spinUpFakeAnthropic({
+      responses: [
+        // The exposed name, so the tool actually executes and the result is a
+        // real success rather than an unknown-tool error.
+        [
+          {
+            kind: "tool_use",
+            id: "tu_1",
+            name: "mcp__app__get_forecast",
+            input: { location: "NYC" },
+          },
+        ],
+        [{ kind: "text", text: "Sunny, 72°F." }],
+      ],
+    });
+    const appApp = new Hono();
+    appApp.post("/api/forecast", () => Response.json({ temp_f: 72, condition: "sunny" }));
+    const appServer = listen({ port: 0, fetch: appApp.fetch });
+    try {
+      registerWeatherBot(store, appServer.port);
+      const app = buildApp({ config: cfgFor(fake.port), store });
+      const res = await app.fetch(
+        chatRequest({ stream: true, iri_agent: "weather-bot", iri_show_tool_calls: true }),
+      );
+      const sse = await readAllSse(res);
+      const calls = [...sse.matchAll(/"tool_calls":\[\{[^\n]*?"id":"(tu_\d+)"/g)].map((m) => m[1]);
+      const results = [...sse.matchAll(/"iri_tool_result":\{"id":"(tu_\d+)","is_error":(\w+)\}/g)];
+      expect(calls).toEqual(["tu_1"]);
+      expect(results).toHaveLength(1);
+      // Pairable, in order, and reported as a success.
+      expect(results[0][1]).toBe("tu_1");
+      expect(results[0][2]).toBe("false");
+      expect(sse.indexOf("tool_calls")).toBeLessThan(sse.indexOf("iri_tool_result"));
+      // The tool's own payload never reaches the wire.
+      expect(sse).not.toContain("temp_f");
+    } finally {
+      appServer.stop();
+      fake.stop();
+    }
+  });
+
+  it("reports a failed tool call as is_error on the stream", async () => {
+    // An unknown tool name is the failure the runtime itself produces; the
+    // point is that a client can tell it apart from a landed write.
+    const fake = spinUpFakeAnthropic({
+      responses: [
+        [{ kind: "tool_use", id: "tu_1", name: "no_such_tool", input: {} }],
+        [{ kind: "text", text: "I could not do that." }],
+      ],
+    });
+    const appApp = new Hono();
+    appApp.post("/api/forecast", () => Response.json({ temp_f: 72, condition: "sunny" }));
+    const appServer = listen({ port: 0, fetch: appApp.fetch });
+    try {
+      registerWeatherBot(store, appServer.port);
+      const app = buildApp({ config: cfgFor(fake.port), store });
+      const res = await app.fetch(
+        chatRequest({ stream: true, iri_agent: "weather-bot", iri_show_tool_calls: true }),
+      );
+      const sse = await readAllSse(res);
+      expect(sse).toContain('"iri_tool_result":{"id":"tu_1","is_error":true}');
+    } finally {
+      appServer.stop();
+      fake.stop();
+    }
+  });
+
+  it("streams no tool result event without the flag", async () => {
+    const fake = spinUpFakeAnthropic({
+      responses: [
+        [{ kind: "tool_use", id: "tu_1", name: "get_forecast", input: { location: "NYC" } }],
+        [{ kind: "text", text: "Sunny, 72°F." }],
+      ],
+    });
+    const appApp = new Hono();
+    appApp.post("/api/forecast", () => Response.json({ temp_f: 72, condition: "sunny" }));
+    const appServer = listen({ port: 0, fetch: appApp.fetch });
+    try {
+      registerWeatherBot(store, appServer.port);
+      const app = buildApp({ config: cfgFor(fake.port), store });
+      const res = await app.fetch(chatRequest({ stream: true, iri_agent: "weather-bot" }));
+      const sse = await readAllSse(res);
+      expect(sse).not.toContain("iri_tool_result");
+      expect(sse).not.toContain("tool_calls");
+    } finally {
+      appServer.stop();
+      fake.stop();
+    }
+  });
+
   async function app_fetchSse(app: ReturnType<typeof buildApp>): Promise<string> {
     const res = await app.fetch(
       new Request("http://x/v1/chat/completions", {

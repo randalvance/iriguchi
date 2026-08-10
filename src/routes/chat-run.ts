@@ -38,6 +38,25 @@ export function validateMessages(messages: unknown): MessageInput | string {
   return messages as MessageInput;
 }
 
+/**
+ * Whether the caller asked to see the run's tool activity.
+ *
+ * The body field is the real control — every other one on this API
+ * (`iri_agent`, `iri_context`, `stream`, `model`) travels in the body, and it
+ * is the only form a browser can set, since the chat-ui proxy forwards bodies
+ * and discards query strings. The query parameter stays as a fallback for the
+ * callers that predate the body field.
+ *
+ * A non-boolean body value falls through to the query parameter rather than
+ * failing the request: this is a display hint, not a mode selector like
+ * `stream`, and refusing to run over it would be the worse outcome.
+ */
+export function resolveShowToolCalls(c: Context, body: unknown): boolean {
+  const fromBody = (body as { iri_show_tool_calls?: unknown } | null)?.iri_show_tool_calls;
+  if (typeof fromBody === "boolean") return fromBody;
+  return c.req.query("iri_show_tool_calls") === "true";
+}
+
 export function gatewayErrorResponse(c: Context, err: GatewayError, requestId: string) {
   return c.json(
     { error: { type: err.type, message: err.message, code: err.code } },

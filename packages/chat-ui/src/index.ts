@@ -1,5 +1,12 @@
 export { createChat } from "./core/chat.js";
-export type { Chat, ChatError, ChatErrorPhase, ChatOptions } from "./core/chat.js";
+export type {
+  Chat,
+  ChatError,
+  ChatErrorPhase,
+  ChatOptions,
+  ToolEvent,
+  ToolEventHandler,
+} from "./core/chat.js";
 export {
   buildContext,
   ContextTooLargeError,
@@ -18,6 +25,7 @@ export {
 } from "./core/storage.js";
 export type { StorageLike, StorageLimits } from "./core/storage.js";
 export { buildRequestBody, ChatRequestError, streamChatCompletion } from "./core/transport.js";
+export type { ToolCallEvent, ToolResultEvent } from "./core/transport.js";
 export type {
   ChatMessage,
   ChatRole,

@@ -5,7 +5,12 @@ import type { Config } from "../config.ts";
 import type { Store } from "../registry/store.ts";
 import type { Logger } from "../logger.ts";
 import { runAgentChunks, GatewayError } from "../agent/runner.ts";
-import { streamChatRun, validateMessages, gatewayErrorResponse } from "./chat-run.ts";
+import {
+  streamChatRun,
+  validateMessages,
+  gatewayErrorResponse,
+  resolveShowToolCalls,
+} from "./chat-run.ts";
 import type { McpRuntime } from "../agent/mcp/discovery.ts";
 import { aggregateChunks, type OpenAIChunk } from "../agent/openai-sse.ts";
 import { parseClientContext, contextByteLength } from "../agent/context.ts";
@@ -74,7 +79,7 @@ export function openaiRoutes(deps: {
     }
     const context = parsedContext.context;
     const wantsStream = body.stream === true;
-    const showToolCalls = c.req.query("iri_show_tool_calls") === "true";
+    const showToolCalls = resolveShowToolCalls(c, body);
     logger.info("request.start", {
       method: "POST",
       path: "/v1/chat/completions",

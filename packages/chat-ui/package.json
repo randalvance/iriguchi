@@ -1,6 +1,6 @@
 {
   "name": "@iriguchi/chat-ui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Embeddable, page-aware chat client for apps registered with an Iriguchi gateway.",
   "type": "module",
   "license": "MIT",

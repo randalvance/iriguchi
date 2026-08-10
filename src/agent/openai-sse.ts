@@ -9,6 +9,21 @@ export type SdkEvent =
   | { type: "done"; reason: "stop" | "max_turns" | "tool_failure" | "error" }
   | { type: "error"; message: string };
 
+/**
+ * A gateway extension: one tool invocation finished. Namespaced `iri_` like
+ * `iri_agent` and `iri_context`, and carried on the delta because that is
+ * where per-event data already lives, so a parser that does not know it walks
+ * past it exactly as it walks past `tool_calls`.
+ *
+ * `id` is the call's own correlation id, so a client pairs a completion with
+ * the `tool_calls` entry that produced it. Deliberately no payload: a page
+ * only needs to know the call landed, and tool results can be large.
+ */
+export type IriToolResult = {
+  id?: string;
+  is_error: boolean;
+};
+
 export type OpenAIDelta = {
   role?: "assistant";
   content?: string;
@@ -18,6 +33,7 @@ export type OpenAIDelta = {
     type: "function";
     function: { name: string; arguments: string };
   }>;
+  iri_tool_result?: IriToolResult;
 };
 
 export type OpenAIChoice = {
@@ -109,9 +125,17 @@ export function translateSdkEvent(ev: SdkEvent, ctx: TranslateContext): OpenAICh
         }),
       ];
     case "tool_result":
-      // Tool results are fed back to the LLM; clients see only the model's
-      // next text turn. Nothing emitted to OpenAI stream.
-      return [];
+      // The result itself is for the model, not the client — only the fact
+      // that the call finished goes on the wire, under the same switch as the
+      // call. `ev.id` is the SDK's `tool_use_id` (runner.ts), the same id the
+      // `tool_use` block carried, so a client pairs on id. Never on position:
+      // parallel tool calls complete in whatever order they complete.
+      if (!ctx.showToolCalls) return [];
+      return [
+        chunk(ctx, {
+          delta: { iri_tool_result: { id: ev.id, is_error: ev.is_error === true } },
+        }),
+      ];
     case "done":
       return [
         chunk(ctx, {
