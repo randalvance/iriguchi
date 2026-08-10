@@ -15,19 +15,46 @@ The browser never holds a gateway key. That is the reason the proxy route exists
 
 ## Install
 
-Consumers are separate repositories, so the package is installed from a git reference. **Pin a tag, not a branch** — there is no npm semver here, and a branch moves under you.
+The package is not on a registry, and **it cannot be installed from a git reference.** `@iriguchi/chat-ui` lives in `packages/chat-ui`, while the repository root is the gateway itself (`"name": "iriguchi"`), so a git spec resolves to the gateway:
 
 ```bash
+# Do NOT do this — installs the gateway, not the client.
 npm install "git+https://github.com/<org>/iriguchi.git#chat-ui-v0.1.0"
 ```
 
-npm runs the package's `prepare` script on a git install, which compiles it. If your npm blocks install scripts, run `npm --prefix node_modules/@iriguchi/chat-ui run build` once.
+The subdirectory form (`#<tag>::path:packages/chat-ui`) does not rescue it. On npm 11 it still unpacks the gateway — into a directory *named* `node_modules/@iriguchi/chat-ui`, which is why the failure is silent. You get no install error; you get a missing-export or missing-module error later, somewhere unrelated. If you suspect you have hit this, the one-line check is:
 
-While developing against a checkout, link it by path instead — this is what `examples/weather-app` does:
+```bash
+node -e "console.log(require('./node_modules/@iriguchi/chat-ui/package.json').name)"
+```
+
+It must print `@iriguchi/chat-ui`. If it prints `iriguchi`, you have the gateway. (Read the file by path, not as `@iriguchi/chat-ui/package.json` — the package's `exports` does not expose it.)
+
+### Install a packed tarball
+
+From the gateway checkout (once per checkout, `npm run chat-ui:install` first to get the build's dependencies):
+
+```bash
+npm run chat-ui:pack
+```
+
+That builds the package and writes `iriguchi-chat-ui-<version>.tgz` at the repository root. Use the script rather than packing by hand: it expands to `npm pack ./packages/chat-ui`, and the by-path argument is load-bearing — `npm pack --prefix packages/chat-ui` ignores the prefix and packs the gateway, the same trap in a different costume. Then, in the consumer:
+
+```bash
+npm install ./iriguchi-chat-ui-0.1.0.tgz
+```
+
+A tarball carries a prebuilt `dist/`, so nothing has to compile at install time. That matters beyond convenience: npm 11 blocks dependency lifecycle scripts by default, so any install path that relies on `prepare` to compile the package now produces an empty install. Publish the tarball as a release asset and consumers can install the URL directly; pin the file, not a branch.
+
+### Develop against a checkout
+
+Link it by path — this is what `examples/weather-app` does:
 
 ```jsonc
 { "dependencies": { "@iriguchi/chat-ui": "file:../iriguchi/packages/chat-ui" } }
 ```
+
+npm symlinks the directory, so edits are picked up without reinstalling. **Build the checkout first** (`npm run chat-ui:build`) and rebuild after changes — the link resolves through `dist/`, and the blocked `prepare` will not build it for you.
 
 ## Entry points
 

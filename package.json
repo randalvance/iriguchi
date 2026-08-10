@@ -20,7 +20,8 @@
     "chat-ui:install": "npm --prefix packages/chat-ui install",
     "chat-ui:build": "npm --prefix packages/chat-ui run build",
     "chat-ui:check": "npm --prefix packages/chat-ui run check",
-    "chat-ui:test": "npm --prefix packages/chat-ui run test"
+    "chat-ui:test": "npm --prefix packages/chat-ui run test",
+    "chat-ui:pack": "npm run chat-ui:build && npm pack ./packages/chat-ui"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",
