@@ -1,7 +1,8 @@
 import { serve } from "@hono/node-server";
+import { createIriguchiChatProxy } from "@iriguchi/chat-ui/server";
 import { Hono } from "hono";
 import { readFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildManifest } from "./manifest.ts";
 
@@ -9,6 +10,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.WEATHER_PORT ?? 4001);
 const GATEWAY_URL = process.env.IRI_GATEWAY_URL ?? "http://localhost:4000";
 const REG_SECRET = process.env.IRI_REGISTRATION_SECRET ?? "";
+const API_KEY = process.env.IRI_API_KEY ?? "";
+
+// The chat client's compiled ESM, served straight to the browser: no bundler,
+// no import map, no build step in this example.
+const CHAT_UI_DIST = dirname(fileURLToPath(import.meta.resolve("@iriguchi/chat-ui")));
 
 let appToken: string | null = null;
 /** Stand-in for per-user storage; a real app would key this by session. */
@@ -99,6 +105,40 @@ app.get("/api/screen", (c) => {
     saved_locations: [...savedLocations],
     forecast: forecastFor(city, 7),
   });
+});
+
+/**
+ * The browser posts here, not to the gateway. `IRI_API_KEY` stays in this
+ * process — a key in a page is a key the user can read and anyone can reuse.
+ */
+const chatProxy = createIriguchiChatProxy({ gatewayUrl: GATEWAY_URL, apiKey: API_KEY });
+
+app.post("/api/ask-ai", (c) => {
+  if (!API_KEY) {
+    return c.json({ error: { code: "not_configured", message: "IRI_API_KEY is unset" } }, 500);
+  }
+  return chatProxy(c.req.raw);
+});
+
+const CONTENT_TYPES: Record<string, string> = {
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+};
+
+app.get("/chat-ui/*", async (c) => {
+  const requested = normalize(c.req.path.slice("/chat-ui/".length));
+  // normalize() collapses `..`, so anything still climbing is a traversal try.
+  if (requested.startsWith("..")) return c.text("not found", 404);
+  const extension = requested.slice(requested.lastIndexOf("."));
+  try {
+    const body = await readFile(join(CHAT_UI_DIST, requested));
+    return c.body(body, 200, {
+      "Content-Type": CONTENT_TYPES[extension] ?? "application/octet-stream",
+    });
+  } catch {
+    return c.text("not found", 404);
+  }
 });
 
 app.get("/", async (c) => {

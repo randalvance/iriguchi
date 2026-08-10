@@ -3,15 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <title>Weather Bot — Iriguchi demo</title>
+    <link rel="stylesheet" href="/chat-ui/styles.css" />
     <style>
       body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
-      #log { border: 1px solid #ccc; padding: 1rem; height: 60vh; overflow-y: auto; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 14px; }
-      .me { color: #036; }
-      .bot { color: #060; }
-      form { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
-      input[type=text] { flex: 1; padding: 0.5rem; }
-      button { padding: 0.5rem 1rem; }
-      label { display: block; margin: 0.5rem 0; font-size: 0.85rem; color: #444; }
       #cities button { margin-right: 0.25rem; }
       #cities button[aria-pressed=true] { font-weight: 700; outline: 2px solid #036; }
       table { border-collapse: collapse; font-size: 0.85rem; margin: 0.5rem 0; }
@@ -23,9 +17,11 @@
   </head>
   <body>
     <h1>Weather Bot</h1>
-    <p>Demo chat backed by Iriguchi + Claude Sonnet via the <code>weather-bot</code> agent.</p>
-    <label>Gateway URL <input id="gw" type="text" value="http://localhost:4000" style="width: 18rem" /></label>
-    <label>API key <input id="key" type="text" value="" placeholder="IRI_API_KEY" style="width: 18rem" /></label>
+    <p>
+      Demo app backed by Iriguchi via the <code>weather-bot</code> agent. The chat lives behind the
+      <strong>Ask AI</strong> button on the right edge, rendered by
+      <code>@iriguchi/chat-ui</code>.
+    </p>
 
     <div id="screen">
       <div id="cities">
@@ -38,25 +34,23 @@
       <p>Screen route: <span id="route">/</span> · saved: <span id="saved">(none)</span></p>
       <div id="forecast"></div>
       <p class="hint">
-        Everything on this panel is sent as <code>iri_context</code> with each message.
-        Scalars (route, city, today) go into the agent's prompt; the 7-day
-        <code>forecast</code> array does not — the agent reads it with
-        <code>get_context</code> only if it needs it.
+        Everything on this panel is registered as an <code>iri_context</code> slice and re-derived
+        on every message. <code>route</code>, <code>city</code> and <code>today</code> are scalars,
+        so they ride in the agent's prompt every turn; the 7-day <code>forecast</code> is an array,
+        so it costs nothing until the agent reads it with <code>get_context</code>.
+      </p>
+      <p class="hint">
+        There is no API key on this page. The browser posts to this app's own
+        <code>/api/ask-ai</code>, which is where the gateway key lives.
       </p>
     </div>
 
-    <div id="log"></div>
-    <form id="f">
-      <input id="msg" type="text" placeholder="What's the weather in NYC?" autocomplete="off" />
-      <button type="submit">Send</button>
-    </form>
-    <script>
-      const log = document.getElementById("log");
-      const history = [];
+    <script type="module">
+      import { createChat } from "/chat-ui/index.js";
+      import { mountAskAiPanel } from "/chat-ui/core/panel/index.js";
 
-      // The app's own screen state. This object is what gets sent as
-      // `iri_context` — the demo's whole point is that it is not assembled for
-      // the agent, it is just what the page is already showing.
+      // The app's own screen state. Nothing here is assembled for the agent —
+      // it is just what the page is already showing.
       let screen = { route: "/" };
       let currentCity = "";
 
@@ -90,73 +84,29 @@
       for (const b of document.querySelectorAll("#cities button")) {
         b.addEventListener("click", () => loadScreen(b.dataset.city));
       }
-      loadScreen("");
-      function append(role, text) {
-        const div = document.createElement("div");
-        div.className = role === "user" ? "me" : "bot";
-        div.textContent = `${role}: ${text}`;
-        log.appendChild(div);
-        log.scrollTop = log.scrollHeight;
-      }
-      document.getElementById("f").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const gw = document.getElementById("gw").value.trim();
-        const key = document.getElementById("key").value.trim();
-        const text = document.getElementById("msg").value.trim();
-        if (!text) return;
-        history.push({ role: "user", content: text });
-        append("user", text);
-        document.getElementById("msg").value = "";
-        const res = await fetch(`${gw}/v1/chat/completions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-6",
-            iri_agent: "weather-bot",
-            messages: history,
-            stream: true,
-            // Sent verbatim, every request. The gateway does not remember it
-            // between requests, so it goes on each one.
-            iri_context: screen,
-          }),
-        });
-        if (!res.ok) {
-          append("error", `${res.status}: ${await res.text()}`);
-          return;
-        }
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let assistantText = "";
-        const div = document.createElement("div");
-        div.className = "bot";
-        div.textContent = "assistant: ";
-        log.appendChild(div);
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n\n");
-          buffer = lines.pop() ?? "";
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const data = line.slice(6);
-            if (data === "[DONE]") continue;
-            try {
-              const obj = JSON.parse(data);
-              const delta = obj.choices?.[0]?.delta?.content;
-              if (delta) {
-                assistantText += delta;
-                div.textContent = `assistant: ${assistantText}`;
-                log.scrollTop = log.scrollHeight;
-              }
-            } catch {}
-          }
-        }
-        history.push({ role: "assistant", content: assistantText });
-        // The agent may have changed app state through a tool (save_location),
-        // so re-read the screen rather than trusting our copy of it.
-        await loadScreen(currentCity);
+      await loadScreen("");
+
+      const chat = createChat({ endpoint: "/api/ask-ai", agent: "weather-bot" });
+
+      // One slice per thing the page owns. Each becomes one top-level key of
+      // iri_context, and each is read fresh at send time — navigate to another
+      // city and the next message carries that city, not this one.
+      chat.registry.register("route", () => screen.route);
+      chat.registry.register("city", () => screen.city);
+      chat.registry.register("units", () => screen.units);
+      chat.registry.register("today", () => screen.today);
+      chat.registry.register("forecast", () => screen.forecast, { truncate: true });
+      chat.registry.register("saved_locations", () => screen.saved_locations);
+
+      mountAskAiPanel(document.body, chat);
+
+      // The agent can change app state through a tool (save_location), so
+      // re-read the screen when a run ends rather than trusting our copy.
+      let wasStreaming = false;
+      chat.subscribe(() => {
+        const streaming = chat.isStreaming();
+        if (wasStreaming && !streaming) void loadScreen(currentCity);
+        wasStreaming = streaming;
       });
     </script>
   </body>

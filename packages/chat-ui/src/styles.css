@@ -1,0 +1,264 @@
+/*
+ * Self-contained panel styles. Two rules govern this file:
+ *
+ * 1. No element or reset selectors. Everything is prefixed `iri-chat-`, so
+ *    loading this sheet cannot change a single host element.
+ * 2. No literal value outside the custom properties below. A host retheming
+ *    the panel redefines properties; it never has to override a selector, and
+ *    never needs `!important`.
+ *
+ * Defaults follow ui/DESIGN.md — dark surfaces, vermilion for interaction,
+ * mono for values, motion that collapses under prefers-reduced-motion.
+ */
+
+.iri-chat-root {
+  --iri-chat-bg: #0b0d10;
+  --iri-chat-surface-1: #121519;
+  --iri-chat-surface-2: #181c22;
+  --iri-chat-surface-3: #20252c;
+  --iri-chat-border: #262c34;
+  --iri-chat-border-strong: #333b45;
+
+  --iri-chat-text: #e8ecf1;
+  --iri-chat-text-muted: #a0a9b4;
+  --iri-chat-text-subtle: #868f9b;
+  --iri-chat-text-inverse: #0b0d10;
+
+  --iri-chat-accent: #e8583c;
+  --iri-chat-accent-hover: #f26a4e;
+  --iri-chat-danger: #f87171;
+
+  --iri-chat-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --iri-chat-font-size: 14px;
+  --iri-chat-font-size-sm: 12px;
+  --iri-chat-leading: 1.65;
+
+  --iri-chat-space-1: 4px;
+  --iri-chat-space-2: 8px;
+  --iri-chat-space-3: 12px;
+  --iri-chat-space-4: 16px;
+
+  --iri-chat-radius-md: 6px;
+  --iri-chat-radius-lg: 10px;
+  --iri-chat-radius-xl: 14px;
+
+  --iri-chat-duration: 280ms;
+  --iri-chat-ease: cubic-bezier(0.2, 0.8, 0.3, 1);
+
+  --iri-chat-width: 400px;
+  --iri-chat-height: 70vh;
+  --iri-chat-z: 2147483000;
+
+  font-family: var(--iri-chat-font);
+  font-size: var(--iri-chat-font-size);
+  color: var(--iri-chat-text);
+}
+
+.iri-chat-launcher {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--iri-chat-z);
+  padding: var(--iri-chat-space-3) var(--iri-chat-space-2);
+  border: none;
+  border-radius: var(--iri-chat-radius-md) 0 0 var(--iri-chat-radius-md);
+  background: var(--iri-chat-accent);
+  /* Dark text on bright vermilion: 5.5:1, where white would reach only 3.6:1. */
+  color: var(--iri-chat-text-inverse);
+  font: inherit;
+  font-weight: 600;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+}
+
+.iri-chat-launcher:hover {
+  background: var(--iri-chat-accent-hover);
+}
+
+.iri-chat-surface {
+  position: fixed;
+  right: var(--iri-chat-space-4);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--iri-chat-z);
+  display: flex;
+  flex-direction: column;
+  width: min(var(--iri-chat-width), calc(100vw - var(--iri-chat-space-4) * 2));
+  height: var(--iri-chat-height);
+  background: var(--iri-chat-surface-1);
+  border: 1px solid var(--iri-chat-border);
+  border-radius: var(--iri-chat-radius-xl);
+  overflow: hidden;
+  animation: iri-chat-slide-in var(--iri-chat-duration) var(--iri-chat-ease);
+}
+
+.iri-chat-surface[hidden] {
+  display: none;
+}
+
+@keyframes iri-chat-slide-in {
+  from {
+    opacity: 0;
+    transform: translate(var(--iri-chat-space-4), -50%);
+  }
+}
+
+.iri-chat-header {
+  display: flex;
+  align-items: center;
+  gap: var(--iri-chat-space-2);
+  padding: var(--iri-chat-space-3) var(--iri-chat-space-4);
+  border-bottom: 1px solid var(--iri-chat-border);
+}
+
+.iri-chat-title {
+  flex: 1;
+  font-weight: 600;
+}
+
+.iri-chat-action {
+  padding: var(--iri-chat-space-1) var(--iri-chat-space-2);
+  min-height: 26px;
+  background: transparent;
+  border: 1px solid var(--iri-chat-border-strong);
+  border-radius: var(--iri-chat-radius-md);
+  color: var(--iri-chat-text-muted);
+  font: inherit;
+  font-size: var(--iri-chat-font-size-sm);
+  cursor: pointer;
+}
+
+.iri-chat-action:hover {
+  background: var(--iri-chat-surface-3);
+  color: var(--iri-chat-text);
+}
+
+.iri-chat-transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--iri-chat-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--iri-chat-space-3);
+  line-height: var(--iri-chat-leading);
+}
+
+/*
+ * Turns are asymmetric on purpose: a user message is a short thing belonging
+ * to a person, an assistant reply is long-form prose that a bubble fights.
+ */
+.iri-chat-msg-user {
+  align-self: flex-end;
+  max-width: 80%;
+  padding: var(--iri-chat-space-2) var(--iri-chat-space-3);
+  background: var(--iri-chat-surface-2);
+  border-radius: var(--iri-chat-radius-lg);
+}
+
+.iri-chat-msg-assistant {
+  align-self: stretch;
+}
+
+.iri-chat-msg-body {
+  /* Assistant text is inserted as text, never parsed. Whitespace is all the
+     structure it gets, so it has to survive. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.iri-chat-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--iri-chat-accent);
+  animation: iri-chat-blink 1s steps(2, start) infinite;
+}
+
+@keyframes iri-chat-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.iri-chat-note {
+  margin-top: var(--iri-chat-space-1);
+  color: var(--iri-chat-text-subtle);
+  font-size: var(--iri-chat-font-size-sm);
+}
+
+.iri-chat-error {
+  margin-top: var(--iri-chat-space-1);
+  padding-left: var(--iri-chat-space-2);
+  border-left: 2px solid var(--iri-chat-danger);
+  color: var(--iri-chat-danger);
+  font-size: var(--iri-chat-font-size-sm);
+}
+
+.iri-chat-composer {
+  display: flex;
+  gap: var(--iri-chat-space-2);
+  padding: var(--iri-chat-space-3);
+  border-top: 1px solid var(--iri-chat-border);
+}
+
+.iri-chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--iri-chat-space-2) var(--iri-chat-space-3);
+  background: var(--iri-chat-surface-2);
+  border: 1px solid var(--iri-chat-border-strong);
+  border-radius: var(--iri-chat-radius-md);
+  color: var(--iri-chat-text);
+  font: inherit;
+}
+
+.iri-chat-input::placeholder {
+  color: var(--iri-chat-text-subtle);
+}
+
+.iri-chat-send,
+.iri-chat-cancel {
+  padding: var(--iri-chat-space-2) var(--iri-chat-space-3);
+  min-height: 32px;
+  border: none;
+  border-radius: var(--iri-chat-radius-md);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.iri-chat-send {
+  background: var(--iri-chat-accent);
+  color: var(--iri-chat-text-inverse);
+}
+
+.iri-chat-send:hover {
+  background: var(--iri-chat-accent-hover);
+}
+
+.iri-chat-cancel {
+  background: var(--iri-chat-surface-3);
+  color: var(--iri-chat-text);
+}
+
+.iri-chat-root :focus-visible {
+  outline: 2px solid var(--iri-chat-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iri-chat-root {
+    --iri-chat-duration: 0ms;
+  }
+
+  .iri-chat-surface {
+    animation: none;
+  }
+
+  .iri-chat-caret {
+    animation: none;
+  }
+}

@@ -1,8 +1,10 @@
 # Weather App — Iriguchi demo
 
-A minimal Node/Hono app that registers itself with the Iriguchi gateway, exposes one agent (`weather-bot`) with two `api_call` tools (`get_forecast`, `save_location`) and one inline skill (`weather-jargon`), and serves a static chat UI at `/`.
+A minimal Node/Hono app that registers itself with the Iriguchi gateway, exposes one agent (`weather-bot`) with two `api_call` tools (`get_forecast`, `save_location`) and one inline skill (`weather-jargon`), and serves a static page at `/` whose chat is the reusable [`@iriguchi/chat-ui`](../../packages/chat-ui) client — the same panel any Iriguchi-registered app can adopt.
 
-The UI is also page-aware: whichever city you are viewing is sent to the gateway as `iri_context`, so the agent can answer questions about "this city" without you naming it. See [things to try](#things-to-try) below.
+The UI is page-aware: whichever city you are viewing is registered as `iri_context` slices, so the agent can answer questions about "this city" without you naming it. See [things to try](#things-to-try) below.
+
+This example is deliberately buildless and framework-free. It loads the client's compiled ESM straight from `/chat-ui/`, which is also what proves that half of the package needs neither React nor a bundler.
 
 ## Run
 
@@ -15,16 +17,34 @@ The UI is also page-aware: whichever city you are viewing is sent to the gateway
    IRI_PROVIDER_ANTHROPIC_DEFAULT_MODEL=claude-opus-5 \
    npm run dev
    ```
-2. Start this app in another terminal:
+2. Start this app in another terminal. It needs `IRI_API_KEY` now: the browser no longer holds one, so this process is what authenticates to the gateway.
    ```bash
    cd examples/weather-app
-   IRI_REGISTRATION_SECRET=regsecret npm run dev
+   npm install
+   IRI_REGISTRATION_SECRET=regsecret IRI_API_KEY=mykey npm run dev
    ```
-3. Open <http://localhost:4001>, paste `mykey` into the API key field, and ask "What's the weather in NYC?"
+3. Open <http://localhost:4001>, click **Ask AI** on the right edge, and ask "What's the weather in NYC?"
+
+`npm install` links `@iriguchi/chat-ui` from `packages/chat-ui` by path and builds it. If your npm blocks install scripts, build it once by hand: `npm run chat-ui:build` from the repository root.
+
+| Variable | Purpose |
+| --- | --- |
+| `IRI_API_KEY` | Presented to the gateway by this app's `/api/ask-ai` proxy route. Never sent to the browser. |
+| `IRI_GATEWAY_URL` | Gateway base URL. Defaults to `http://localhost:4000`. |
+| `IRI_REGISTRATION_SECRET` | Registers the app and its manifest at startup, as before. |
 
 ## Things to try
 
-Pick a city with the buttons above the chat log. The panel shows exactly what the app sends as `iri_context` on every message:
+Pick a city with the buttons on the page, then open **Ask AI**. Each thing the page owns is registered as its own slice, and the merged envelope is re-derived on every message:
+
+```js
+chat.registry.register("route", () => screen.route);              // scalar → system prompt
+chat.registry.register("city", () => screen.city);                // scalar → system prompt
+chat.registry.register("today", () => screen.today);              // scalar → system prompt
+chat.registry.register("forecast", () => screen.forecast, { truncate: true });  // array → get_context
+```
+
+which merges to:
 
 ```jsonc
 {
@@ -36,6 +56,8 @@ Pick a city with the buttons above the chat log. The panel shows exactly what th
   "forecast": [ /* 7 days */ ]   // nested → placeholder only; read via get_context
 }
 ```
+
+Because slices are read at send time, walking to another city changes what the *next* message carries. Earlier turns keep what they were told as text, but the agent cannot `get_context` into a screen you have left.
 
 | Ask this | What it demonstrates |
 | --- | --- |
@@ -51,4 +73,15 @@ The last two rows are the point of `when`: the same agent has a different tool s
 
 - `src/manifest.ts` — the agent, its tools, and the `when` clause on `save_location`.
 - `src/server.ts` — tool endpoints (app-token authenticated) plus `GET /api/screen`, which is what the browser reads. That one is **not** a tool endpoint: it is the app's own front end calling its own API, and in a real app it would be session-authenticated. The app token is for the gateway, and no browser should hold it.
-- `public/index.html` — renders the screen and sends the same object as `iri_context`.
+- `src/server.ts` also mounts `createIriguchiChatProxy` at `POST /api/ask-ai` and serves the client's `dist/` at `/chat-ui/`.
+- `public/index.html` — renders the screen, registers each part of it as a context slice, and mounts the Ask AI panel.
+
+## Trying the client itself
+
+| Do this | What it demonstrates |
+| --- | --- |
+| Watch the reply appear word by word | Streaming SSE, rendered as it arrives rather than after the ~40s run |
+| Press **Stop** mid-reply | The partial text stays, marked *Stopped* — a cancelled run is not an error |
+| Reload the page | The conversation is restored from `localStorage`; the context is not, and never was stored |
+| Press **Clear conversation** | Transcript and stored thread both go |
+| Open devtools → Network | The browser talks only to this app's origin, and carries no gateway key |
