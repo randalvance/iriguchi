@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
+    "@iriguchi/chat-ui": "file:../../packages/chat-ui",
     "hono": "^4.0.0"
   }
 }

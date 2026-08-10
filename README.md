@@ -284,4 +284,13 @@ ui/                         # Astro static client, built to ui/dist
     ├── layouts/Base.astro  # App shell
     ├── lib/api.ts          # Typed /internal/* client + SSE reader
     └── pages/              # index.astro (chat), agents.astro (catalog)
+
+packages/chat-ui/           # @iriguchi/chat-ui — embeddable "Ask AI" client for other apps
+└── src/
+    ├── core/               # Framework-free: slice registry, SSE transport, storage, panel DOM
+    ├── react/              # Provider + hooks + panel wrapper
+    ├── server/             # createIriguchiChatProxy — keeps IRI_API_KEY off the browser
+    └── styles.css          # Self-contained, themed by --iri-chat-* custom properties
 ```
+
+`packages/chat-ui` is a distributable consumed by *other* repositories, so unlike `ui/` it compiles to `dist/` and is installed from a git tag. It is a sibling npm project, not a workspace member, driven by root scripts (`chat-ui:install`, `chat-ui:build`, `chat-ui:check`, `chat-ui:test`). See [`docs/chat-ui-client.md`](docs/chat-ui-client.md) for adoption, and `examples/weather-app` for a working integration.

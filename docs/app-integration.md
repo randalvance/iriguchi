@@ -288,3 +288,7 @@ Two consequences worth designing around:
 The block is introduced as data rather than instructions, and the block fences are escaped so a value cannot close the region it lives in. That framing is defense in depth, not a guarantee — the substantive protection is that only top-level scalars ever reach the system prompt. A hostile string inside a payload (a transaction description that came from an imported bank CSV, say) can reach the model only as a `get_context` tool result.
 
 Two things follow for you: don't put secrets in the context expecting them to stay out of the model's view, and don't send anything you would not want a model to read. Values are never logged — the gateway logs only the top-level key names and the byte size.
+
+### You do not have to write the client half
+
+[`@iriguchi/chat-ui`](./chat-ui-client.md) is a reusable client that assembles this envelope for you: components register named context slices, it merges them at send time, streams the reply, holds the conversation, and ships a server-side proxy so the gateway key never reaches the browser. It also renders an "Ask AI" panel you can use as-is or replace with your own UI. `examples/weather-app` uses it.
