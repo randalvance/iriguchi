@@ -34,5 +34,5 @@
 - [x] 5.1 Run `npm test` and `npx tsc --noEmit` for the gateway, and `npm run chat-ui:check` / `npm run chat-ui:test` for the package
 - [x] 5.2 Update the chat-ui README with the `showToolCalls` option and a `useIriToolEvents` example, stating that no tool payload is on the wire
 - [x] 5.3a Bump `@iriguchi/chat-ui` to `0.2.0` and build the tarball (`npm run chat-ui:pack`)
-- [ ] 5.3b Publish `iriguchi-chat-ui-0.2.0.tgz` as a release asset — needs a maintainer, not an agent
+- [x] 5.3b Publish `iriguchi-chat-ui-0.2.0.tgz` as a release asset (chat-ui-v0.2.0)
 - [x] 5.4 Note for finance-app: bump the pinned `iriguchi-chat-ui-0.1.0.tgz` URL to `0.2.0`
