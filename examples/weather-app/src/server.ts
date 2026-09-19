@@ -113,7 +113,7 @@ app.get("/api/screen", (c) => {
  */
 const chatProxy = createIriguchiChatProxy({ gatewayUrl: GATEWAY_URL, apiKey: API_KEY });
 
-app.post("/api/ask-ai", (c) => {
+app.post("/api/ask-ai", async (c) => {
   if (!API_KEY) {
     return c.json({ error: { code: "not_configured", message: "IRI_API_KEY is unset" } }, 500);
   }
