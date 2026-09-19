@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

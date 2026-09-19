@@ -5,6 +5,7 @@
   "features": {
     "ghcr.io/devcontainers/features/git:1": {}
   },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/iriguchi,type=bind",
   "workspaceFolder": "/workspaces/iriguchi",
   "forwardPorts": [4000, 4001],
   "portsAttributes": {
